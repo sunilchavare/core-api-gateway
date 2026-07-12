@@ -1,0 +1,17 @@
+# Environments
+backend/venv/
+.venv/
+env/
+venv.bak/
+
+# Environment Variables
+.env
+.env.local
+
+# Python cache
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Node modules
+frontend/node_modules/

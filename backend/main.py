@@ -1,5 +1,7 @@
 from fastapi import FastAPI, HTTPException, status
 from app.schemas import UserRegisterRequest, UserLoginRequest, AuthResponse, APIKeyResponse
+from uuid import uuid4
+
 
 app=FastAPI(title="Core API Gateway Skeleton")
 MOCK_USER_DB={}
@@ -43,3 +45,10 @@ def login_user(payload: UserLoginRequest):
     message="Login Successful",
     username=payload.username
 )
+    
+@app.post("/api/v1/keys/generate", response_model=APIKeyResponse        )
+def generate_api_key():
+    return APIKeyResponse(
+        api_key=str(uuid4()),
+        status="active"
+    )

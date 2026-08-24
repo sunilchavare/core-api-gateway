@@ -13,6 +13,7 @@ class UserLoginRequest(BaseModel):
 class AuthResponse(BaseModel):
     message: str
     username: str
+    access_token: str 
 class APIKeyResponse(BaseModel):
     #Standard format for returning a new API key string
     api_key: str

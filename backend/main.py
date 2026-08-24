@@ -4,9 +4,8 @@ from uuid import uuid4
 from app.database import get_db
 from app.models import User
 from sqlalchemy import select
+from app.models import User, APIKey
 app=FastAPI(title="Core API Gateway Skeleton")
-
-
 
 @app.get("/health", status_code=status.HTTP_200_OK)
 def check_health():
@@ -71,8 +70,28 @@ async def login_user(
 )
     
 @app.post("/api/v1/keys/generate", response_model=APIKeyResponse)
-async def generate_api_key():
+async def generate_api_key(user_id: int, db=Depends(get_db)):
+    result = await db.execute(
+        select(User).where(User.id==user_id)
+    )
+    
+    user = result.scalar_one_or_none()
+    
+    if user is None:
+        raise HTTPException(
+            status_code= status.HTTP_404_NOT_FOUND,
+            detail= "User doesn't exist"
+        )
+    api_key = APIKey(
+        key_value=str(uuid4()),
+        user_id=user_id,
+        is_active=True,
+        quota_limit=10
+    )
+    db.add(api_key)
+    await db.commit()
+        
     return APIKeyResponse(
-        api_key=str(uuid4()),
+        api_key=api_key.key_value,
         status="active"
     )

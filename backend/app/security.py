@@ -9,6 +9,7 @@ import os
 from app.database import get_db
 from app.models import User, APIKey
 from sqlalchemy import select
+from app.rate_limit import check_rate_limit
 
 load_dotenv()
 
@@ -101,6 +102,16 @@ async def get_current_api_key(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="API key is inactive"
+        )
+    allowed = await check_rate_limit(
+        key.key_value,
+        key.quota_limit
+    )
+    
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Rate limit exceeded"
         )
     return key
 

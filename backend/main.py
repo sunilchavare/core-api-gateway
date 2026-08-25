@@ -4,7 +4,7 @@ from uuid import uuid4
 from app.database import get_db
 from app.models import User
 from sqlalchemy import select
-from app.security import hash_password, verify_password, create_access_token, get_current_user
+from app.security import hash_password, verify_password, create_access_token, get_current_user, get_current_api_key
 from app.models import User, APIKey
 app=FastAPI(title="Core API Gateway Skeleton")
 
@@ -99,4 +99,13 @@ async def get_me(current_user: User= Depends(get_current_user)):
     return{
         "id":current_user.id,
         "username": current_user.username
+    }
+@app.get("/api/v1/test-api-key")
+async def test_api_key(
+    key: APIKey= Depends(get_current_api_key)
+):
+    return{
+        "message": "API key is valid",
+        "user_id": key.user_id,
+        "quota_limit": key.quota_limit
     }

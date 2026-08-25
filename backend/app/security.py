@@ -1,15 +1,14 @@
 from passlib.context import CryptContext
 from jose import JWTError, jwt 
 from dotenv import load_dotenv
-import os 
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, APIKeyHeader
 from datetime import datetime, timedelta, timezone
-from fastapi import Depends, HTTPException, status
-from app.database import get_db
-from app.models import User
-from sqlalchemy import select
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import Depends, HTTPException, status, Security
+import os 
 
-oauth2_scheme = HTTPBearer()
+from app.database import get_db
+from app.models import User, APIKey
+from sqlalchemy import select
 
 load_dotenv()
 
@@ -20,6 +19,12 @@ ACCESS_TOKEN_EXPIRE_MINUTES= 30
 pwd_context= CryptContext(
     schemes=["bcrypt"],
     deprecated="auto"
+)
+
+oauth2_scheme = HTTPBearer()
+
+api_key_header= APIKeyHeader(
+    name="x-api-key"
 )
 
 def hash_password(password: str)-> str:
@@ -77,3 +82,26 @@ async def get_current_user(
             detail="User doesn't exist"
         )
     return user
+
+async def get_current_api_key(
+    api_key: str= Security(api_key_header),
+    db=Depends(get_db)
+):
+    result= await db.execute(
+        select(APIKey).where(APIKey.key_value==api_key)
+    )
+    key= result.scalar_one_or_none()
+    
+    if key is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API key"
+        )
+    if not key.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="API key is inactive"
+        )
+    return key
+
+        

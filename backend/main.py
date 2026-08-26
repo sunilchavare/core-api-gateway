@@ -2,10 +2,12 @@ from fastapi import FastAPI, HTTPException, status , Depends
 from app.schemas import UserRegisterRequest, UserLoginRequest, AuthResponse, APIKeyResponse
 from uuid import uuid4
 from app.database import get_db
-from app.models import User
 from sqlalchemy import select
 from app.security import hash_password, verify_password, create_access_token, get_current_user, get_current_api_key
 from app.models import User, APIKey
+from app.routes import DOWNSTREAM_SERVICES
+import httpx
+
 app=FastAPI(title="Core API Gateway Skeleton")
 
 @app.get("/health", status_code=status.HTTP_200_OK)
@@ -109,3 +111,33 @@ async def test_api_key(
         "user_id": key.user_id,
         "quota_limit": key.quota_limit
     }
+    
+@app.get("/api/v1/proxy/hello")
+async def proxy_hello(
+    key: APIKey= Depends(get_current_api_key)
+):
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"{DOWNSTREAM_SERVICES['hello']}/hello"
+        )
+        return response.json()
+    
+@app.get("/apo/v1/proxy/{service}/{path:path}")
+async def proxy_request(
+    service: str,
+    path: str,
+    key: APIKey = Depends(get_current_api_key)
+):
+    base_url= DOWNSTREAM_SERVICES.get(service)
+    
+    if base_url is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Service not found"
+        )
+    target_url = f"{base_url}/{path}"
+    
+    async with httpx.AsyncClient() as client:
+        response =  await client.get(target_url)
+        
+    return response.json()

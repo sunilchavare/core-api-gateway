@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, status , Depends
+from fastapi import FastAPI, HTTPException, status , Depends, Request
 from app.schemas import UserRegisterRequest, UserLoginRequest, AuthResponse, APIKeyResponse
 from uuid import uuid4
 from app.database import get_db
@@ -122,10 +122,16 @@ async def proxy_hello(
         )
         return response.json()
     
-@app.get("/apo/v1/proxy/{service}/{path:path}")
+@app.api_route(
+    "/api/v1/proxy/{service}/{path:path}",
+    methods=["GET","POST","PUT","DELETE","PATCH"]
+               )
 async def proxy_request(
     service: str,
     path: str,
+    request: Request,
+    name: str= None,
+    body: dict | None= None,
     key: APIKey = Depends(get_current_api_key)
 ):
     base_url= DOWNSTREAM_SERVICES.get(service)
@@ -138,6 +144,16 @@ async def proxy_request(
     target_url = f"{base_url}/{path}"
     
     async with httpx.AsyncClient() as client:
-        response =  await client.get(target_url)
+        response =  await client.request(
+            method=request.method,
+            url=target_url,
+            params=request.query_params,
+            headers={
+                key: value 
+                for key, value in request.headers.items()
+                if key.lower()!= "x-api-key"
+                },
+            json=body
+            )
         
     return response.json()

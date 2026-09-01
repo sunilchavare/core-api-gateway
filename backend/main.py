@@ -7,6 +7,7 @@ from app.security import hash_password, verify_password, create_access_token, ge
 from app.models import User, APIKey
 from app.routes import DOWNSTREAM_SERVICES
 import httpx
+from fastapi.responses import JSONResponse
 
 app=FastAPI(title="Core API Gateway Skeleton")
 
@@ -143,8 +144,9 @@ async def proxy_request(
         )
     target_url = f"{base_url}/{path}"
     
-    async with httpx.AsyncClient() as client:
-        response =  await client.request(
+    try:
+        async with httpx.AsyncClient() as client:
+            response =  await client.request(
             method=request.method,
             url=target_url,
             params=request.query_params,
@@ -155,5 +157,13 @@ async def proxy_request(
                 },
             json=body
             )
-        
-    return response.json()
+    except httpx.ConnectError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Downstream service unavailable"
+        )    
+    
+    return JSONResponse(
+        content=response.json(),
+        status_code=response.status_code
+    )

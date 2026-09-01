@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, status , Depends, Request
+from fastapi import FastAPI, HTTPException, status , Depends, Request, Response
 from app.schemas import UserRegisterRequest, UserLoginRequest, AuthResponse, APIKeyResponse
 from uuid import uuid4
 from app.database import get_db
@@ -160,9 +160,27 @@ async def proxy_request(
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail="Downstream service timeout"
-        )    
+        )  
+        
+    hop_by_hop_headers={
+        "connection",
+        "keep-alive",
+        "proxy-authenticate",
+        "proxy-authorization",
+        "te",
+        "trailer",
+        "transfer-encoding",
+        "upgrade",
+    }  
     
-    return JSONResponse(
-        content=response.json(),
-        status_code=response.status_code
+    response_headers={
+        key: value 
+        for key, value in response.headers.items()
+        if key.lower() not in hop_by_hop_headers
+    }
+    
+    return Response(
+        content=response.content,
+        status_code=response.status_code,
+        headers=response_headers
     )

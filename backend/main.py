@@ -145,7 +145,7 @@ async def proxy_request(
     target_url = f"{base_url}/{path}"
     
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=10.0) as client:
             response =  await client.request(
             method=request.method,
             url=target_url,
@@ -157,10 +157,10 @@ async def proxy_request(
                 },
             json=body
             )
-    except httpx.ConnectError:
+    except httpx.ReadTimeout:
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Downstream service unavailable"
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Downstream service timeout"
         )    
     
     return JSONResponse(

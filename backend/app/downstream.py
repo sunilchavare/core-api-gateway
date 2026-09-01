@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Header
+import asyncio
 
 downstream_app = FastAPI(title="Downstream Service")
 
@@ -35,3 +36,11 @@ async def delete_echo():
     return {
         "message": "Resource deleted"
     }
+
+@downstream_app.get("/slow")
+async def slow():
+    await asyncio.sleep(15)
+    return{
+        "message": "Slow response"
+    }
+        

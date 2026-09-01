@@ -1,5 +1,10 @@
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
 DOWNSTREAM_SERVICES= {
-    "hello" : "http://127.0.0.1:8001"
+    "hello" : os.getenv("DOWNSTREAM_HELLO_URL")
 }
 
 

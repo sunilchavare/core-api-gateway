@@ -9,6 +9,12 @@ from app.routes import DOWNSTREAM_SERVICES
 import httpx
 from fastapi.responses import JSONResponse
 
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+
 app=FastAPI(title="Core API Gateway Skeleton")
 
 @app.get("/health", status_code=status.HTTP_200_OK)
@@ -144,7 +150,7 @@ async def proxy_request(
     
     body = await request.body()
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=float(os.getenv("DOWNSTREAM_TIMEOUT"))) as client:
             response =  await client.request(
             method=request.method,
             url=target_url,

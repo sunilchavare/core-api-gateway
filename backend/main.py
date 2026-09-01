@@ -131,8 +131,6 @@ async def proxy_request(
     service: str,
     path: str,
     request: Request,
-    name: str= None,
-    body: dict | None= None,
     key: APIKey = Depends(get_current_api_key)
 ):
     base_url= DOWNSTREAM_SERVICES.get(service)
@@ -144,6 +142,7 @@ async def proxy_request(
         )
     target_url = f"{base_url}/{path}"
     
+    body = await request.body()
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response =  await client.request(
@@ -155,7 +154,7 @@ async def proxy_request(
                 for key, value in request.headers.items()
                 if key.lower()!= "x-api-key"
                 },
-            json=body
+            content=body
             )
     except httpx.ReadTimeout:
         raise HTTPException(

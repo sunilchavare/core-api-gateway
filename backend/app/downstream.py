@@ -20,4 +20,18 @@ async def echo(
         "client_name": x_client_name,
         "api_key_received": x_api_key
     }
-     
+@downstream_app.put("/echo")
+async def update_echo(data: dict):
+    return{
+        "updated": data
+    }
+@downstream_app.patch("/echo")
+async def patch_echo(data: dict):
+    return{
+        "patched": data   
+        }
+@downstream_app.delete("/echo")
+async def delete_echo():
+    return {
+        "message": "Resource deleted"
+    }

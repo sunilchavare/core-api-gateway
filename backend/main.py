@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException, status , Depends, Request, Response
-from app.schemas import UserRegisterRequest, UserLoginRequest, AuthResponse, APIKeyResponse
+from app.schemas import UserRegisterRequest, UserLoginRequest, AuthResponse, APIKeyResponse, RegisterResponse
 from uuid import uuid4
 from app.database import get_db
 from sqlalchemy import select
@@ -24,7 +24,7 @@ def check_health():
     }
     
 
-@app.post("/api/v1/auth/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
+@app.post("/api/v1/auth/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED)
 async def register_user(
     payload: UserRegisterRequest ,
     db = Depends(get_db)
@@ -46,10 +46,11 @@ async def register_user(
     db.add(user)
     await db.commit()
     
-    return AuthResponse(
-        message="User successfully registered",
-        username=payload.username
-    )
+    return {
+    "message": "User successfully registered",
+    "username": payload.username,
+    
+}
     
 @app.post("/api/v1/auth/login",response_model=AuthResponse, status_code=status.HTTP_200_OK)
 async def login_user(

@@ -18,4 +18,9 @@ class APIKeyResponse(BaseModel):
     #Standard format for returning a new API key string
     api_key: str
     status: str
+
+class RegisterResponse(BaseModel):
+    message: str
+    username: str
+
     

@@ -68,3 +68,13 @@ def test_login():
     assert key_response.status_code == 200
     assert key_response.json()["api_key"]
     assert key_response.json()["status"] == "active"
+    
+    api_key = key_response.json()["api_key"]
+
+    proxy_response = client.get(
+        "/api/v1/proxy/hello/hello",
+        headers={"X-API-Key": api_key}
+    )
+
+    assert proxy_response.status_code == 200
+    assert proxy_response.json() == {"message": "Hello, world!"}

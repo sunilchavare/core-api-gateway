@@ -2,15 +2,21 @@ from fastapi.testclient import TestClient
 from main import app
 from app.database import get_db
 import uuid 
+import pytest
 client=TestClient(app)
 
-def test_health():
+@pytest.fixture(scope="session")
+def client():
+    with TestClient(app) as test_client:
+        yield test_client
+        
+def test_health(client):
     response=client.get("/health")
     
     assert response.status_code==200
     assert response.json() == {"status":"ok"}
     
-def test_proxy_unknown_service():
+def test_proxy_unknown_service(client):
     response = client.get(
         "/api/v1/proxy/unknown/hello",
         headers={"X-API-Key": "invalid-key"}
@@ -18,7 +24,7 @@ def test_proxy_unknown_service():
 
     assert response.status_code == 401
     
-def test_register_response():
+def test_register_response(client):
     username = f"pytest_{uuid.uuid4().hex[:8]}"
     
     response = client.post(
@@ -34,7 +40,7 @@ def test_register_response():
         "message": "User successfully registered",
         "username": username
     }
-def test_login():
+def test_login(client):
     username=f"pytest_{uuid.uuid4().hex[:8]}"
     password="TestPass123!"
     
@@ -78,3 +84,32 @@ def test_login():
 
     assert proxy_response.status_code == 200
     assert proxy_response.json() == {"message": "Hello, world!"}
+    
+def test_proxy_timeout(client):
+    username = f"pytest_{uuid.uuid4().hex[:8]}"
+    password = "TestPass123!"
+
+    client.post(
+        "/api/v1/auth/register",
+        json={"username": username, "password": password}
+    )
+
+    login_response = client.post(
+        "/api/v1/auth/login",
+        json={"username": username, "password": password}
+    )
+    access_token = login_response.json()["access_token"]
+
+    key_response = client.post(
+        "/api/v1/keys/generate",
+        headers={"Authorization": f"Bearer {access_token}"}
+    )
+    api_key = key_response.json()["api_key"]
+
+    response = client.get(
+        "/api/v1/proxy/hello/slow",
+        headers={"X-API-Key": api_key}
+    )
+
+    assert response.status_code == 504
+    assert response.json()["detail"] == "Downstream service timeout"

@@ -163,11 +163,16 @@ async def proxy_request(
                 },
             content=body
             )
+    except httpx.ConnectError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Downstream service unavailable"
+        )
     except httpx.ReadTimeout:
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail="Downstream service timeout"
-        )  
+        )
         
     hop_by_hop_headers={
         "connection",

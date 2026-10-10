@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 from main import app
 from app.database import get_db
+from unittest.mock import patch
 import uuid 
 import pytest
 client=TestClient(app)
@@ -113,3 +114,33 @@ def test_proxy_timeout(client):
 
     assert response.status_code == 504
     assert response.json()["detail"] == "Downstream service timeout"
+
+def test_proxy_downstream_unavailable(client):
+    username = f"pytest_{uuid.uuid4().hex[:8]}"
+    password = "TestPass123!"
+
+    client.post(
+        "/api/v1/auth/register",
+        json={"username": username, "password": password}
+    )
+
+    login_response = client.post(
+        "/api/v1/auth/login",
+        json={"username": username, "password": password}
+    )
+    access_token = login_response.json()["access_token"]
+
+    key_response = client.post(
+        "/api/v1/keys/generate",
+        headers={"Authorization": f"Bearer {access_token}"}
+    )
+    api_key = key_response.json()["api_key"]
+
+    with patch.dict("main.DOWNSTREAM_SERVICES", {"hello": "http://127.0.0.1:9999"}):
+        response = client.get(
+            "/api/v1/proxy/hello/hello",
+            headers={"X-API-Key": api_key}
+        )
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "Downstream service unavailable"

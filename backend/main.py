@@ -120,20 +120,35 @@ async def test_api_key(
         "quota_limit": key.quota_limit
     }
     
+
 @app.get("/api/v1/proxy/hello")
 async def proxy_hello(
-    key: APIKey= Depends(get_current_api_key)
+    key: APIKey = Depends(get_current_api_key)
 ):
-    async with httpx.AsyncClient() as client:
-        response = await client.get(
-            f"{DOWNSTREAM_SERVICES['hello']}/hello"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                f"{DOWNSTREAM_SERVICES['hello']}/hello"
+            )
+            response.raise_for_status()
+            return response.json()
+
+    except httpx.ConnectError:
+        raise HTTPException(
+            status_code=502,
+            detail="Downstream service unavailable"
         )
-        return response.json()
-    
+
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=504,
+            detail="Downstream service timed out"
+        )
+
 @app.api_route(
     "/api/v1/proxy/{service}/{path:path}",
-    methods=["GET","POST","PUT","DELETE","PATCH"]
-               )
+    methods=["GET", "POST", "PUT", "DELETE", "PATCH"]
+)
 async def proxy_request(
     service: str,
     path: str,

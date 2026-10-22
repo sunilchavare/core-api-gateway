@@ -3,7 +3,7 @@ from app.schemas import UserRegisterRequest, UserLoginRequest, AuthResponse, API
 from uuid import uuid4
 from app.database import get_db
 from sqlalchemy import select
-from app.security import hash_password, verify_password, create_access_token, get_current_user, get_current_api_key
+from app.security import hash_password, verify_password, create_access_token, get_current_user, get_current_api_key, generate_api_key_value, hash_api_key
 from app.models import User, APIKey
 from app.routes import DOWNSTREAM_SERVICES
 import httpx
@@ -89,18 +89,20 @@ async def generate_api_key(
     current_user: User = Depends(get_current_user),
     db=Depends(get_db)
 ):
- 
+    raw_api_key = generate_api_key_value()
+
     api_key = APIKey(
-        key_value=str(uuid4()),
+        key_value=hash_api_key(raw_api_key),
         user_id=current_user.id,
         is_active=True,
         quota_limit=10
     )
+
     db.add(api_key)
     await db.commit()
-        
+
     return APIKeyResponse(
-        api_key=api_key.key_value,
+        api_key=raw_api_key,
         status="active"
     )
     

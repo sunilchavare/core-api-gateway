@@ -1,0 +1,54 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: core_api_gateway
+      POSTGRES_USER: coreapi
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U coreapi -d core_api_gateway"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  downstream:
+    build:
+      context: ./backend
+    command: ["uvicorn", "app.downstream:downstream_app", "--host", "0.0.0.0", "--port", "8001"]
+    expose:
+      - "8001"
+
+  gateway:
+    build:
+      context: ./backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://coreapi:${POSTGRES_PASSWORD}@db:5432/core_api_gateway
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ""
+      DOWNSTREAM_HELLO_URL: http://downstream:8001
+      DOWNSTREAM_TIMEOUT: ${DOWNSTREAM_TIMEOUT:-10}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      downstream:
+        condition: service_started
+
+volumes:
+  postgres_data:

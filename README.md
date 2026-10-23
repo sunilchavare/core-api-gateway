@@ -34,11 +34,27 @@ Install Docker Engine and the Docker Compose plugin.
 
 ### 1. Configure environment
 
-Create a root `.env` file if you do not already have one. Preserve any existing application settings and add:
+Create a `.env` file in the project root. This file stores configuration and secrets used by Docker Compose.
 
-    POSTGRES_PASSWORD=choose_a_local_password
+Add the following variables:
 
-Use a password suitable for local development. Do not commit `.env` or share its secrets.
+```dotenv
+POSTGRES_PASSWORD=your_database_password
+SECRET_KEY=your_generated_secret_key
+```
+
+- **`POSTGRES_PASSWORD`**: Choose a password for the PostgreSQL `coreapi` user created by Docker Compose. It is used by both the PostgreSQL container and the API gateway to connect to the database. You do not need to install PostgreSQL separately.
+- **`SECRET_KEY`**: A secret used to sign JWT authentication tokens. Generate one with:
+
+  ```bash
+  openssl rand -hex 32
+  ```
+
+  Replace `your_generated_secret_key` with the generated value.
+
+Replace `your_database_password` with a password you choose for this local environment.
+
+**Security:** Keep `.env` private. Do not commit it to GitHub or share its secrets. Generate a unique `SECRET_KEY` for each environment..
 
 ### 2. Start services
 

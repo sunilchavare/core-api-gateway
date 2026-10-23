@@ -1,125 +1,394 @@
+import { useState, useEffect } from 'react'
 import './App.css'
 
-function App() {
-  return (
-    <div className="app">
-      <aside className="sidebar">
-        <div className="brand">
-          <div className="brand-icon">G</div>
-          <div>
-            <h2>Core Gateway</h2>
-            <span>API MANAGEMENT</span>
-          </div>
-        </div>
+const API_BASE = 'http://127.0.0.1:8000'
 
-        <nav>
-          <p className="nav-label">WORKSPACE</p>
-          <a className="nav-item active" href="#dashboard">▦ Dashboard</a>
-          <a className="nav-item" href="#api-keys">⌘ API Keys</a>
-          <a className="nav-item" href="#proxy">⇄ Proxy Tester</a>
-          <a className="nav-item" href="#settings">⚙ Settings</a>
-        </nav>
+function App() {
+  const [method, setMethod] = useState('GET')
+  const [endpoint, setEndpoint] = useState('/api/v1/proxy/hello')
+  const [apiKey, setApiKey] = useState('')
+  const [requestBody, setRequestBody] = useState('{\n  \n}')
+  const [status, setStatus] = useState(null)
+  const [duration, setDuration] = useState(null)
+  const [response, setResponse] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [health, setHealth] = useState('Unknown')
+  const [checkingHealth, setCheckingHealth] = useState(false)
+  const [history, setHistory] = useState([])
+  const [activeView, setActiveView] = useState('request')
+
+
+
+async function checkHealth() {
+  setCheckingHealth(true)
+
+  const start = performance.now()
+
+  try {
+    const res = await fetch(`${API_BASE}/health`)
+    setHealth(res.ok ? 'Online' : `HTTP ${res.status}`)
+  } catch {
+    setHealth('Unreachable')
+  } finally {
+    const elapsed = performance.now() - start
+    const remaining = Math.max(0, 400 - elapsed)
+
+    if (remaining > 0) {
+      await new Promise((resolve) => setTimeout(resolve, remaining))
+    }
+
+    setCheckingHealth(false)
+  }
+}
+
+
+  useEffect(() => {
+  checkHealth()
+}, [])
+
+  async function sendRequest() {
+    if (!endpoint.trim() || !endpoint.startsWith('/')) {
+      setStatus('Invalid URL')
+      setResponse('Enter an endpoint starting with /.')
+      return
+    }
+
+    const hasBody = ['POST', 'PUT', 'PATCH'].includes(method)
+
+    if (hasBody) {
+      try {
+        JSON.parse(requestBody)
+      } catch {
+        setStatus('Invalid JSON')
+        setResponse('Fix the JSON request body before sending.')
+        return
+      }
+    }
+
+    setLoading(true)
+    setResponse(null)
+    setStatus(null)
+    setDuration(null)
+
+    const start = performance.now()
+
+    try {
+      const headers = {}
+
+      if (apiKey.trim()) {
+        headers['X-API-Key'] = apiKey.trim()
+      }
+
+      if (hasBody) {
+        headers['Content-Type'] = 'application/json'
+      }
+
+      const res = await fetch(`${API_BASE}${endpoint}`, {
+        method,
+        headers,
+        ...(hasBody ? { body: requestBody } : {}),
+      })
+
+      const elapsed = Math.round(performance.now() - start)
+      const text = await res.text()
+      let body
+
+      try {
+        body = JSON.stringify(JSON.parse(text), null, 2)
+      } catch {
+        body = text
+      }
+
+      setStatus(res.status)
+      setDuration(elapsed)
+      setResponse(body)
+
+      setHistory((items) => [
+        {
+          method,
+          endpoint,
+          status: res.status,
+          duration: elapsed,
+          time: new Date().toLocaleTimeString(),
+        },
+        ...items,
+      ].slice(0, 8))
+    } catch (error) {
+      setStatus('Network error')
+      setResponse(
+        `${error.message}\n\nCheck that the FastAPI gateway is running at ${API_BASE} and CORS is configured.`,
+      )
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="workspace">
+      <aside className="sidebar">
+        <a className="brand" href="#workspace">
+          <span className="brand-mark">CG</span>
+          <span>
+            <strong>Core Gateway</strong>
+            <small>API WORKSPACE</small>
+          </span>
+        </a>
+
+        <div className="nav-caption">WORKSPACE</div>
+
+<button
+  type="button"
+  className={`nav-link ${activeView === 'request' ? 'active' : ''}`}
+  onClick={() => setActiveView('request')}
+>
+  Request builder
+</button>
+
+<button
+  type="button"
+  className={`nav-link ${activeView === 'history' ? 'active' : ''}`}
+  onClick={() => setActiveView('history')}
+>
+  Request history
+</button>
+
+<button
+  type="button"
+  className={`nav-link ${activeView === 'inspector' ? 'active' : ''}`}
+  onClick={() => setActiveView('inspector')}
+>
+  Response inspector
+</button>
 
         <div className="sidebar-bottom">
-          <div className="avatar">D</div>
-          <div>
-            <strong>Developer</strong>
-            <span>API Administrator</span>
+          <div className="nav-caption">LOCAL ENVIRONMENT</div>
+          <div className="environment">
+            <span className={`dot ${health === 'Online' ? 'online' : ''}`} />
+            <span>Gateway</span>
+            <span className="environment-value">{health}</span>
           </div>
+         <button
+  className="text-button"
+  onClick={checkHealth}
+  type="button"
+  disabled={checkingHealth}
+>
+  {checkingHealth ? 'Checking…' : 'Check connection ↗'}
+</button>
         </div>
       </aside>
 
-      <main className="main-content" id="dashboard">
-        <header className="topbar">
+      <main className="main-panel" id="workspace">
+        <header className="page-header">
           <div>
-            <p className="breadcrumb">Workspace / Overview</p>
-            <h1>Dashboard</h1>
+            <div className="breadcrumb">Workspace / HTTP client</div>
+            <h1>Request builder</h1>
+            <p>Send requests through your API gateway and inspect the response.</p>
           </div>
-          <div className="connection-status">
-            <span className="status-dot" />
-            Gateway interface
-          </div>
+          <span className="local-label">LOCAL DEVELOPMENT</span>
         </header>
 
-        <section className="welcome">
-          <div>
-            <p className="eyebrow">CORE API GATEWAY</p>
-            <h2>Your APIs, one gateway.</h2>
-            <p>Manage access, monitor requests, and test your services.</p>
-          </div>
-          <div className="welcome-icon">⌘</div>
-        </section>
+        {activeView === 'request' && (
+  <section className="panel request-panel" id="request">
 
-        <section className="section">
-          <div className="section-heading">
+          <div className="panel-heading">
             <div>
-              <h2>System overview</h2>
-              <p>Your gateway at a glance</p>
+              <h2>New request</h2>
+              <p>Configure an endpoint and send a request.</p>
+            </div>
+            <span className="request-type">HTTP</span>
+          </div>
+
+          <form
+            onSubmit={(event) => {
+              event.preventDefault()
+              sendRequest()
+            }}
+          >
+            <label className="field-label" htmlFor="endpoint">Request URL</label>
+
+            <div className="request-line">
+              <select
+                aria-label="HTTP method"
+                value={method}
+                onChange={(event) => setMethod(event.target.value)}
+              >
+                <option>GET</option>
+                <option>POST</option>
+                <option>PUT</option>
+                <option>PATCH</option>
+                <option>DELETE</option>
+              </select>
+
+              <input
+                id="endpoint"
+                value={endpoint}
+                onChange={(event) => setEndpoint(event.target.value)}
+                placeholder="/api/v1/proxy/hello"
+                required
+              />
+
+              <button className="send-button" type="submit" disabled={loading}>
+                {loading ? 'Sending…' : 'Send request'}
+              </button>
+            </div>
+
+            <label className="field-label" htmlFor="api-key">API key</label>
+            <input
+              id="api-key"
+              className="full-input"
+              type="password"
+              value={apiKey}
+              onChange={(event) => setApiKey(event.target.value)}
+              placeholder="Enter your API key"
+              autoComplete="off"
+            />
+
+            <p className="field-help">
+              Sent in the X-API-Key header. The key stays in this page's memory only.
+            </p>
+
+            {['POST', 'PUT', 'PATCH'].includes(method) && (
+              <div className="body-editor">
+                <label className="field-label" htmlFor="request-body">
+                  Request body · JSON
+                </label>
+                <textarea
+                  id="request-body"
+                  value={requestBody}
+                  onChange={(event) => setRequestBody(event.target.value)}
+                  placeholder={'{\n  "key": "value"\n}'}
+                  spellCheck={false}
+                  rows={8}
+                />
+              </div>
+            )}
+          </form>
+
+          {status !== null && (
+            <div className="request-result">
+              <div className="request-result-heading">
+                <strong>Latest result</strong>
+                <span
+                  className={`http-status ${
+                    typeof status === 'number' && status < 400
+                      ? 'success'
+                      : 'failure'
+                  }`}
+                >
+                  {typeof status === 'number' ? `HTTP ${status}` : status}
+                </span>
+                {duration !== null && (
+                  <span className="duration">{duration} ms</span>
+                )}
+              </div>
+
+              <pre className="request-result-body">
+                {response ?? 'Waiting for response…'}
+              </pre>
+
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => setActiveView('inspector')}
+              >
+                Open full response inspector →
+              </button>
+            </div>
+          )}
+        </section>
+        )}
+
+        {activeView === 'inspector' && (
+  <section className="panel response-panel" id="response">
+          <div className="panel-heading response-heading">
+            <div>
+              <h2>Response</h2>
+              <p>Server response body and request timing.</p>
+            </div>
+            <div className="response-meta">
+              {status !== null && (
+                <span className={`http-status ${
+                  typeof status === 'number' && status < 400 ? 'success' : 'failure'
+                }`}>
+                  {typeof status === 'number' ? `HTTP ${status}` : status}
+                </span>
+              )}
+              {duration !== null && <span className="duration">{duration} ms</span>}
             </div>
           </div>
 
-          <div className="stats-grid">
-            <article className="stat-card">
-              <div className="stat-top">
-                <span>Gateway status</span>
-                <span className="stat-icon purple">↗</span>
-              </div>
-              <h3>Checking soon</h3>
-              <p className="stat-note">Backend connection not yet wired</p>
-            </article>
-
-            <article className="stat-card">
-              <div className="stat-top">
-                <span>Authentication</span>
-                <span className="stat-icon blue">⌑</span>
-              </div>
-              <h3>JWT + API Keys</h3>
-              <p className="stat-note">Protected API access</p>
-            </article>
-
-            <article className="stat-card">
-              <div className="stat-top">
-                <span>Rate limiting</span>
-                <span className="stat-icon green">◷</span>
-              </div>
-              <h3>10 requests</h3>
-              <p className="stat-note">Per key, per 60-second window</p>
-            </article>
+          <div className="response-toolbar">
+            <span>Response body</span>
+            <span>JSON / text</span>
           </div>
+
+          <pre className="response-body" aria-live="polite">
+            {response ?? 'Send a request to view the response here.'}
+          </pre>
         </section>
+        )}
 
-        <section className="section tools-section">
-          <div className="section-heading">
-            <div>
-              <h2>Developer tools</h2>
-              <p>Quick access to your gateway features</p>
-            </div>
-          </div>
+       {activeView === 'history' && (
+  <section className="panel history-panel" id="history">
+  <div className="panel-heading">
+    <div>
+      <h2>Recent requests</h2>
+      <p>Requests made during this browser session.</p>
+    </div>
 
-          <div className="tools-grid">
-            <article className="tool-card" id="api-keys">
-              <div className="tool-icon purple">⌘</div>
-              <h3>API key management</h3>
-              <p>Generate and manage keys used to authenticate requests.</p>
-              <button onClick={() => alert('API key management is coming next.')}>
-                Manage keys <span>→</span>
-              </button>
-            </article>
+    <div className="history-actions">
+      <span className="history-count">{history.length} / 8</span>
+      <button
+        className="secondary-button"
+        type="button"
+        onClick={() => setHistory([])}
+        disabled={history.length === 0}
+      >
+        Clear history
+      </button>
+    </div>
+  </div>
 
-            <article className="tool-card" id="proxy">
-              <div className="tool-icon blue">⇄</div>
-              <h3>Proxy tester</h3>
-              <p>Send a request through the gateway to your downstream service.</p>
-              <button onClick={() => alert('Proxy tester is coming next.')}>
-                Test proxy <span>→</span>
-              </button>
-            </article>
-          </div>
-        </section>
+  {history.length === 0 ? (
+    <div className="empty-history">
+      No requests yet. Send your first request above.
+    </div>
+  ) : (
+    <div className="history-list">
+      {history.map((item, index) => (
+        <button
+          className="history-row"
+          key={`${item.time}-${index}`}
+          type="button"
+          onClick={() => {
+            setMethod(item.method)
+            setEndpoint(item.endpoint)
+            if (item.requestBody !== undefined) {
+              setRequestBody(item.requestBody)
+            }
+          }}
+          title="Load this request into the builder"
+        >
+          <span className={`method-tag ${item.method.toLowerCase()}`}>
+            {item.method}
+          </span>
+          <code>{item.endpoint}</code>
+          <span className={item.status < 400 ? 'history-success' : 'history-failure'}>
+            {item.status}
+          </span>
+          <span className="history-duration">{item.duration} ms</span>
+          <span className="history-time">{item.time}</span>
+        </button>
+      ))}
+    </div>
+  )}
+</section>
+       )}
 
-        <footer>
+        <footer className="page-footer">
           <span>Core API Gateway</span>
-          <span>Development environment</span>
+          <span>Request history clears on refresh.</span>
         </footer>
       </main>
     </div>

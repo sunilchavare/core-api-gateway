@@ -8,6 +8,8 @@ from app.models import User, APIKey
 from app.routes import DOWNSTREAM_SERVICES
 import httpx
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+
 
 import os
 from dotenv import load_dotenv
@@ -16,6 +18,17 @@ load_dotenv()
 
 
 app=FastAPI(title="Core API Gateway Skeleton")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.get("/health", status_code=status.HTTP_200_OK)
 def check_health():

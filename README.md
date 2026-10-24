@@ -7,6 +7,7 @@ Getting Started
 Clone the repository and enter the project directory:
 
 git clone https://github.com/sunilchavare/core-api-gateway.git
+
 cd core-api-gateway
 
 Then follow the setup instructions below.

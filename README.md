@@ -2,6 +2,15 @@
 
 A backend API gateway built with FastAPI, PostgreSQL, SQLAlchemy, Alembic, Redis, and HTTPX. The project demonstrates authentication, API key generation, request proxying, and rate limiting.
 
+Getting Started
+
+Clone the repository and enter the project directory:
+
+git clone https://github.com/sunilchavare/core-api-gateway.git
+cd core-api-gateway
+
+Then follow the setup instructions below.
+
 ## Features
 
 - User registration and login

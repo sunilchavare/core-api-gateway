@@ -34,27 +34,25 @@ Install Docker Engine and the Docker Compose plugin.
 
 ### 1. Configure environment
 
-Create a `.env` file in the project root. This file stores configuration and secrets used by Docker Compose.
+Copy the example environment file into `.env` at the project root:
 
-Add the following variables:
-
-```dotenv
-POSTGRES_PASSWORD=your_database_password
-SECRET_KEY=your_generated_secret_key
+```bash
+cp -n .env.example .env
 ```
 
-- **`POSTGRES_PASSWORD`**: Choose a password for the PostgreSQL `coreapi` user created by Docker Compose. It is used by both the PostgreSQL container and the API gateway to connect to the database. You do not need to install PostgreSQL separately.
+Edit `.env` and set the required values:
+
+- **`POSTGRES_PASSWORD`**: Choose a local database password containing only letters, numbers, and underscores. Docker Compose uses this value in the PostgreSQL connection URL.
+
 - **`SECRET_KEY`**: A secret used to sign JWT authentication tokens. Generate one with:
 
   ```bash
   openssl rand -hex 32
   ```
 
-  Replace `your_generated_secret_key` with the generated value.
+Replace the placeholder values in `.env` with your chosen database password and generated secret.
 
-Replace `your_database_password` with a password you choose for this local environment.
-
-**Security:** Keep `.env` private. Do not commit it to GitHub or share its secrets. Generate a unique `SECRET_KEY` for each environment..
+**Security:** Keep `.env` private. Do not commit it to GitHub or share its secrets. Use a unique `SECRET_KEY` for each environment.
 
 ### 2. Start services
 
@@ -95,11 +93,70 @@ Expected response:
 
 The PostgreSQL data volume is retained when you stop services this way. Do not use `docker compose down -v` unless you intend to delete the stored volume.
 
+## Run the Frontend
+
+The React and Vite frontend is maintained separately from the Docker Compose backend services.
+
+### 1. Install dependencies
+
+```bash
+cd frontend
+npm install
+```
+
+### 2. Start the development server
+
+```bash
+npm run dev
+```
+
+Open the local URL printed by Vite in your terminal.
+
+### 3. Build and lint
+
+```bash
+npm run build
+npm run lint
+```
+
+The frontend is not included in the Docker Compose services.
+
 ## Run Tests Locally
 
-From the backend directory, activate your virtual environment and run:
+Ensure you have completed the environment configuration in the Docker Compose section above. If .env already exists, preserve it rather than overwriting it.
 
-    python -m pytest -q
+
+### 1. Install dependencies
+
+From the repository root:
+
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+```
+
+### 2. Start required services
+
+Return to the repository root and start the Docker Compose services:
+
+```bash
+cd ..
+docker compose up --build -d
+docker compose exec gateway alembic upgrade head
+```
+
+The tests require PostgreSQL and Redis. Redis is published locally at `127.0.0.1:6379`. Ensure the local test process uses the correct database and Redis configuration.
+
+### 3. Run tests
+
+From the `backend` directory:
+
+```bash
+cd backend
+python -m pytest -q
+```
 
 ## Main Endpoints
 

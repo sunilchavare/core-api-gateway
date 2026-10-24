@@ -1,4 +1,5 @@
-from passlib.context import CryptContext
+from pwdlib import PasswordHash
+from pwdlib.hashers.bcrypt import BcryptHasher
 from jose import JWTError, jwt 
 from dotenv import load_dotenv
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, APIKeyHeader
@@ -14,14 +15,15 @@ from app.rate_limit import check_rate_limit
 
 load_dotenv()
 
-SECRET_KEY =os.getenv("SECRET_KEY")
+SECRET_KEY = os.getenv("SECRET_KEY")
+
+if not SECRET_KEY:
+    raise RuntimeError("SECRET_KEY must be set in the environment")
+
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES= 30 
 
-pwd_context= CryptContext(
-    schemes=["bcrypt"],
-    deprecated="auto"
-)
+password_hash = PasswordHash((BcryptHasher(),))
 
 oauth2_scheme = HTTPBearer()
 
@@ -29,11 +31,12 @@ api_key_header= APIKeyHeader(
     name="x-api-key"
 )
 
-def hash_password(password: str)-> str:
-    return pwd_context.hash(password)
+def hash_password(password: str) -> str:
+    return password_hash.hash(password)
 
-def verify_password(plain_password: str, hashed_password: str)-> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return password_hash.verify(plain_password, hashed_password)
 
 def create_access_token(data: dict)->str:
     to_encode=data.copy()

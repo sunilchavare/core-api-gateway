@@ -1,18 +1,28 @@
-# Environments
-backend/venv/
+# Virtual environments
 .venv/
+venv/
+backend/venv/
 env/
 venv.bak/
 
-# Environment Variables
+# Environment files and secrets
 .env
-.env.local
+.env.*
+!.env.example
 
-# Python cache
+# Python cache and test artifacts
 __pycache__/
-*.pyc
+*.py[cod]
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
 
-# Node modules
+# Node.js
 frontend/node_modules/
-backend/Dockerfile.fix
+frontend/dist/
+
+# OS files
+.DS_Store

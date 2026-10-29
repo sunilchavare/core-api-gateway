@@ -214,10 +214,15 @@ async def proxy_request(
         "upgrade",
     }  
     
+    excluded_response_headers = hop_by_hop_headers | {
+        "content-encoding",
+        "content-length",
+    }
+
     response_headers={
         key: value 
         for key, value in response.headers.items()
-        if key.lower() not in hop_by_hop_headers
+        if key.lower() not in excluded_response_headers
     }
     
     return Response(

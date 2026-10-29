@@ -40,6 +40,9 @@ EXCLUDED_REQUEST_HEADERS = HOP_BY_HOP_HEADERS | {"x-api-key", "host", "content-l
 # httpx already decoded the body, so these no longer describe it.
 # Starlette sets a correct content-length itself.
 EXCLUDED_RESPONSE_HEADERS = HOP_BY_HOP_HEADERS | {"content-encoding", "content-length"}
+# Seconds to wait on the downstream service; httpx applies it to connect,
+# read, write and pool-acquire separately. Defaults to 10 if unset.
+DOWNSTREAM_TIMEOUT = float(os.getenv("DOWNSTREAM_TIMEOUT", "10"))
 
 app.add_middleware(
     CORSMiddleware,
@@ -202,7 +205,7 @@ async def proxy_request(
 
     body = await request.body()
     try:
-        async with httpx.AsyncClient(timeout=float(os.getenv("DOWNSTREAM_TIMEOUT"))) as client:
+        async with httpx.AsyncClient(timeout=DOWNSTREAM_TIMEOUT) as client:
             response = await client.request(
                 method=request.method,
                 url=target_url,
@@ -214,15 +217,22 @@ async def proxy_request(
                 },
                 content=body
             )
+    except httpx.TimeoutException:
+        # Covers connect, read, write and pool timeouts.
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Downstream service timeout"
+        )
     except httpx.ConnectError:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Downstream service unavailable"
         )
-    except httpx.ReadTimeout:
+    except httpx.RequestError:
+        # Any other network or protocol failure talking to the downstream.
         raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail="Downstream service timeout"
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Downstream request failed"
         )
 
     response_headers = {

@@ -55,3 +55,5 @@ def test_proxy_filters_request_headers(mocked_client):
     assert headers["content-length"] == str(len(seen["body"]))
     # Normal application headers still pass through.
     assert headers["x-client-name"] == "demo"
+    
+    

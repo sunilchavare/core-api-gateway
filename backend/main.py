@@ -19,6 +19,28 @@ load_dotenv()
 
 app=FastAPI(title="Core API Gateway Skeleton")
 
+# Headers that describe one network hop, not the end-to-end request.
+HOP_BY_HOP_HEADERS = {
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+}
+
+# Never forwarded to the downstream service:
+# - x-api-key: the gateway's own credential
+# - host: must describe the downstream, httpx sets it from the URL
+# - content-length: httpx recalculates it for the body we send
+EXCLUDED_REQUEST_HEADERS = HOP_BY_HOP_HEADERS | {"x-api-key", "host", "content-length"}
+
+# httpx already decoded the body, so these no longer describe it.
+# Starlette sets a correct content-length itself.
+EXCLUDED_RESPONSE_HEADERS = HOP_BY_HOP_HEADERS | {"content-encoding", "content-length"}
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -169,28 +191,28 @@ async def proxy_request(
     request: Request,
     key: APIKey = Depends(get_current_api_key)
 ):
-    base_url= DOWNSTREAM_SERVICES.get(service)
-    
+    base_url = DOWNSTREAM_SERVICES.get(service)
+
     if base_url is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Service not found"
         )
     target_url = f"{base_url}/{path}"
-    
+
     body = await request.body()
     try:
         async with httpx.AsyncClient(timeout=float(os.getenv("DOWNSTREAM_TIMEOUT"))) as client:
-            response =  await client.request(
-            method=request.method,
-            url=target_url,
-            params=request.query_params,
-            headers={
-                key: value 
-                for key, value in request.headers.items()
-                if key.lower()!= "x-api-key"
+            response = await client.request(
+                method=request.method,
+                url=target_url,
+                params=request.query_params,
+                headers={
+                    name: value
+                    for name, value in request.headers.items()
+                    if name.lower() not in EXCLUDED_REQUEST_HEADERS
                 },
-            content=body
+                content=body
             )
     except httpx.ConnectError:
         raise HTTPException(
@@ -202,29 +224,13 @@ async def proxy_request(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail="Downstream service timeout"
         )
-        
-    hop_by_hop_headers={
-        "connection",
-        "keep-alive",
-        "proxy-authenticate",
-        "proxy-authorization",
-        "te",
-        "trailer",
-        "transfer-encoding",
-        "upgrade",
-    }  
-    
-    excluded_response_headers = hop_by_hop_headers | {
-        "content-encoding",
-        "content-length",
+
+    response_headers = {
+        name: value
+        for name, value in response.headers.items()
+        if name.lower() not in EXCLUDED_RESPONSE_HEADERS
     }
 
-    response_headers={
-        key: value 
-        for key, value in response.headers.items()
-        if key.lower() not in excluded_response_headers
-    }
-    
     return Response(
         content=response.content,
         status_code=response.status_code,

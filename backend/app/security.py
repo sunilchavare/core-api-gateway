@@ -24,6 +24,7 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES= 30 
 
 password_hash = PasswordHash((BcryptHasher(),))
+DUMMY_PASSWORD_HASH = password_hash.hash("dummy-password-for-timing")
 
 oauth2_scheme = HTTPBearer()
 

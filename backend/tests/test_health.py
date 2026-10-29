@@ -89,6 +89,19 @@ def test_login(client):
 
     assert proxy_response.status_code == 200
     assert proxy_response.json() == {"message": "Hello, world!"}
+    
+def test_login_errors_are_identical(client):
+    username = f"pytest_{uuid.uuid4().hex[:8]}"
+    client.post("/api/v1/auth/register",
+                json={"username": username, "password": "TestPass123!"})
+
+    wrong_password = client.post("/api/v1/auth/login",
+                                 json={"username": username, "password": "WrongPass999!"})
+    unknown_user = client.post("/api/v1/auth/login",
+                               json={"username": "no_such_user_xyz", "password": "WrongPass999!"})
+
+    assert wrong_password.status_code == unknown_user.status_code == 401
+    assert wrong_password.json() == unknown_user.json()
 
 
 def test_proxy_timeout(client):

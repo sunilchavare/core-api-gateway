@@ -3,7 +3,7 @@ from app.schemas import UserRegisterRequest, UserLoginRequest, AuthResponse, API
 from uuid import uuid4
 from app.database import get_db
 from sqlalchemy import select
-from app.security import hash_password, verify_password, create_access_token, get_current_user, get_current_api_key, generate_api_key_value, hash_api_key
+from app.security import hash_password, verify_password, create_access_token, get_current_user, get_current_api_key, generate_api_key_value, hash_api_key, DUMMY_PASSWORD_HASH
 from app.models import User, APIKey
 from app.routes import DOWNSTREAM_SERVICES
 import httpx
@@ -77,16 +77,15 @@ async def login_user(
     user= result.scalar_one_or_none()
     
         
-    if user is None: 
+    hash_to_check = user.hashed_password if user else DUMMY_PASSWORD_HASH
+    password_ok = verify_password(payload.password, hash_to_check)
+
+    if user is None or not password_ok:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User doesn't exist"
+            detail="Invalid username or password"
         )
-    if not verify_password(payload.password, user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Password doesn't match"
-        )
+   
     access_token= create_access_token(
         {"sub": str(user.id)}
     )

@@ -88,7 +88,7 @@ Interactive API documentation is available at http://localhost:8000/docs.
 
 ### 5. Test proxying
 
-1. Open http://localhost:8000/docs.
+1. Open http://localhost:8000/api/v1/proxy/hello/hello
 2. Register a user with `POST /api/v1/auth/register`, then log in with `POST /api/v1/auth/login`.
 3. Click **Authorize** and paste the `access_token` from the login response.
 4. Call `POST /api/v1/keys/generate` and copy the `api_key`. It is shown only once.
@@ -179,7 +179,6 @@ The test process also needs `SECRET_KEY` and `DATABASE_URL` set in its environme
 | POST | `/api/v1/keys/generate` | Generate an API key |
 | GET | `/api/v1/auth/me` | Get current authenticated user |
 | GET | `/api/v1/test-api-key` | Test API key authentication |
-| GET | `/api/v1/proxy/hello` | Proxy a request to the downstream service |
 | GET/POST/PUT/PATCH/DELETE | `/api/v1/proxy/{service}/{path}` | Forward supported requests to downstream services |
 
 Some endpoints require authentication or an API key.

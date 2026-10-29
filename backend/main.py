@@ -1,13 +1,11 @@
 from fastapi import FastAPI, HTTPException, status , Depends, Request, Response
 from app.schemas import UserRegisterRequest, UserLoginRequest, AuthResponse, APIKeyResponse, RegisterResponse
-from uuid import uuid4
 from app.database import get_db
 from sqlalchemy import select
 from app.security import hash_password, verify_password, create_access_token, get_current_user, get_current_api_key, generate_api_key_value, hash_api_key, DUMMY_PASSWORD_HASH
 from app.models import User, APIKey
 from app.routes import DOWNSTREAM_SERVICES
 import httpx
-from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 
@@ -40,6 +38,7 @@ EXCLUDED_REQUEST_HEADERS = HOP_BY_HOP_HEADERS | {"x-api-key", "host", "content-l
 # httpx already decoded the body, so these no longer describe it.
 # Starlette sets a correct content-length itself.
 EXCLUDED_RESPONSE_HEADERS = HOP_BY_HOP_HEADERS | {"content-encoding", "content-length"}
+
 # Seconds to wait on the downstream service; httpx applies it to connect,
 # read, write and pool-acquire separately. Defaults to 10 if unset.
 DOWNSTREAM_TIMEOUT = float(os.getenv("DOWNSTREAM_TIMEOUT", "10"))
@@ -159,31 +158,6 @@ async def test_api_key(
         "quota_limit": key.quota_limit
     }
     
-
-@app.get("/api/v1/proxy/hello")
-async def proxy_hello(
-    key: APIKey = Depends(get_current_api_key)
-):
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(
-                f"{DOWNSTREAM_SERVICES['hello']}/hello"
-            )
-            response.raise_for_status()
-            return response.json()
-
-    except httpx.ConnectError:
-        raise HTTPException(
-            status_code=502,
-            detail="Downstream service unavailable"
-        )
-
-    except httpx.TimeoutException:
-        raise HTTPException(
-            status_code=504,
-            detail="Downstream service timed out"
-        )
-
 @app.api_route(
     "/api/v1/proxy/{service}/{path:path}",
     methods=["GET", "POST", "PUT", "DELETE", "PATCH"]

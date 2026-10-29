@@ -5,7 +5,7 @@ const API_BASE = 'http://127.0.0.1:8000'
 
 function App() {
   const [method, setMethod] = useState('GET')
-  const [endpoint, setEndpoint] = useState('/api/v1/proxy/hello')
+  const [endpoint, setEndpoint] = useState('/api/v1/proxy/hello/hello')
   const [apiKey, setApiKey] = useState('')
   const [requestBody, setRequestBody] = useState('{\n  \n}')
   const [status, setStatus] = useState(null)
@@ -224,7 +224,7 @@ async function checkHealth() {
                 id="endpoint"
                 value={endpoint}
                 onChange={(event) => setEndpoint(event.target.value)}
-                placeholder="/api/v1/proxy/hello"
+                placeholder="/api/v1/proxy/hello/hello"
                 required
               />
 

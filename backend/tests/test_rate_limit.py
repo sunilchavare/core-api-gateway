@@ -111,3 +111,19 @@ def test_allowed_request_returns_the_key(monkeypatch):
     key = asyncio.run(security.get_current_api_key(api_key="k", db=FakeDb()))
 
     assert key.quota_limit == 10
+    
+def test_fails_open_when_redis_is_down(monkeypatch, caplog):
+    import redis.asyncio
+
+    # Nothing listens on port 1, so every command raises ConnectionError.
+    dead_redis = redis.asyncio.Redis(
+        host="127.0.0.1", port=1, socket_connect_timeout=1
+    )
+    monkeypatch.setattr(rate_limit, "redis_client", dead_redis)
+
+    with caplog.at_level("WARNING"):
+        result = asyncio.run(rate_limit.check_rate_limit("key-x", 3))
+
+    assert result == (True, 0)
+    assert "Redis unavailable" in caplog.text
+    

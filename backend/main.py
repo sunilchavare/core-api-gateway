@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, status , Depends, Request, Response
 from app.schemas import UserRegisterRequest, UserLoginRequest, AuthResponse, APIKeyResponse, RegisterResponse
 from app.database import get_db
-from sqlalchemy import select
+from sqlalchemy import select, func
 from app.security import hash_password, verify_password, create_access_token, get_current_user, get_current_api_key, generate_api_key_value, hash_api_key, DUMMY_PASSWORD_HASH
 from app.models import User, APIKey
 from app.routes import DOWNSTREAM_SERVICES
@@ -42,6 +42,7 @@ EXCLUDED_RESPONSE_HEADERS = HOP_BY_HOP_HEADERS | {"content-encoding", "content-l
 # Seconds to wait on the downstream service; httpx applies it to connect,
 # read, write and pool-acquire separately. Defaults to 10 if unset.
 DOWNSTREAM_TIMEOUT = float(os.getenv("DOWNSTREAM_TIMEOUT", "10"))
+MAX_ACTIVE_KEYS_PER_USER = 5
 
 app.add_middleware(
     CORSMiddleware,
@@ -125,6 +126,25 @@ async def generate_api_key(
     current_user: User = Depends(get_current_user),
     db=Depends(get_db)
 ):
+    
+    await db.execute(
+        select(User.id).where(User.id == current_user.id).with_for_update()
+    )
+
+    active_keys = (
+        await db.execute(
+            select(func.count())
+            .select_from(APIKey)
+            .where(APIKey.user_id == current_user.id, APIKey.is_active.is_(True))
+        )
+    ).scalar_one()
+
+    if active_keys >= MAX_ACTIVE_KEYS_PER_USER:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Key limit reached ({MAX_ACTIVE_KEYS_PER_USER} active keys per user)"
+        )
+
     raw_api_key = generate_api_key_value()
 
     api_key = APIKey(

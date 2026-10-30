@@ -112,7 +112,7 @@ async def get_current_api_key(
             detail="API key is inactive"
         )
 
-    allowed = await check_rate_limit(
+    allowed, retry_after = await check_rate_limit(
         hashed_key,
         key.quota_limit
     )
@@ -120,7 +120,8 @@ async def get_current_api_key(
     if not allowed:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Rate limit exceeded"
+            detail="Rate limit exceeded",
+            headers={"Retry-After": str(retry_after)}
         )
 
     return key

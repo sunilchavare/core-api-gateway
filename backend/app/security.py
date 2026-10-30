@@ -70,14 +70,15 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token"
         )
-    user_id= payload.get("sub")
-    if user_id is None:
+    try:
+        user_id = int(payload.get("sub"))
+    except (TypeError, ValueError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token"
         )
     result = await db.execute(
-        select(User).where(User.id==int(user_id))
+        select(User).where(User.id == user_id)
     )
     
     user= result.scalar_one_or_none()

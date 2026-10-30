@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException, status , Depends, Request, Response
 from app.schemas import UserRegisterRequest, UserLoginRequest, AuthResponse, APIKeyResponse, RegisterResponse
 from app.database import get_db
 from sqlalchemy import select, func
+from sqlalchemy.exc import IntegrityError
 from app.security import hash_password, verify_password, create_access_token, get_current_user, get_current_api_key, generate_api_key_value, hash_api_key, DUMMY_PASSWORD_HASH
 from app.models import User, APIKey
 from app.routes import DOWNSTREAM_SERVICES
@@ -64,31 +65,36 @@ def check_health():
 
 @app.post("/api/v1/auth/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED)
 async def register_user(
-    payload: UserRegisterRequest ,
-    db = Depends(get_db)
-    ):
-    result= await db.execute(
-        select(User).where(User.username==payload.username)
+    payload: UserRegisterRequest,
+    db=Depends(get_db)
+):
+    result = await db.execute(
+        select(User).where(User.username == payload.username)
     )
-    existing_user = result.scalar_one_or_none()
-    user=User(
+    if result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Username already registered"
+        )
+
+    user = User(
         username=payload.username,
         hashed_password=hash_password(payload.password)
     )
-    if existing_user:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Username already registered"
-            )
-    
     db.add(user)
-    await db.commit()
-    
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Username already registered"
+        )
+
     return {
-    "message": "User successfully registered",
-    "username": payload.username,
-    
-}
+        "message": "User successfully registered",
+        "username": payload.username,
+    }
     
 @app.post("/api/v1/auth/login",response_model=AuthResponse, status_code=status.HTTP_200_OK)
 async def login_user(

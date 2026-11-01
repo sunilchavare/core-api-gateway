@@ -1,22 +1,35 @@
-from fastapi import FastAPI, HTTPException, status , Depends, Request, Response
-from app.schemas import UserRegisterRequest, UserLoginRequest, AuthResponse, APIKeyResponse, RegisterResponse
-from app.database import get_db
-from sqlalchemy import select, func
-from sqlalchemy.exc import IntegrityError
-from app.security import hash_password, verify_password, create_access_token, get_current_user, get_current_api_key, generate_api_key_value, hash_api_key, DUMMY_PASSWORD_HASH
-from app.models import User, APIKey
-from app.routes import DOWNSTREAM_SERVICES
+from contextlib import asynccontextmanager
+
 import httpx
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from redis.exceptions import RedisError
+from sqlalchemy import func, select, text
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
-
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
-
-
-app=FastAPI(title="Core API Gateway Skeleton")
+from app.config import settings
+from app.database import get_db
+from app.models import APIKey, User
+from app.redis import redis_client
+from app.routes import DOWNSTREAM_SERVICES
+from app.schemas import (
+    APIKeyResponse,
+    AuthResponse,
+    RegisterResponse,
+    UserLoginRequest,
+    UserRegisterRequest,
+)
+from app.security import (
+    DUMMY_PASSWORD_HASH,
+    create_access_token,
+    generate_api_key_value,
+    get_current_api_key,
+    get_current_user,
+    hash_api_key,
+    hash_password,
+    verify_password,
+)
 
 # Headers that describe one network hop, not the end-to-end request.
 HOP_BY_HOP_HEADERS = {
@@ -40,28 +53,62 @@ EXCLUDED_REQUEST_HEADERS = HOP_BY_HOP_HEADERS | {"x-api-key", "host", "content-l
 # Starlette sets a correct content-length itself.
 EXCLUDED_RESPONSE_HEADERS = HOP_BY_HOP_HEADERS | {"content-encoding", "content-length"}
 
-# Seconds to wait on the downstream service; httpx applies it to connect,
-# read, write and pool-acquire separately. Defaults to 10 if unset.
-DOWNSTREAM_TIMEOUT = float(os.getenv("DOWNSTREAM_TIMEOUT", "10"))
+# Each key has its own rate limit quota, so an unlimited number of keys
+# would mean an unlimited quota. Cap how many active keys one user can hold.
 MAX_ACTIVE_KEYS_PER_USER = 5
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # One shared client for all proxied requests, so connections are
+    # pooled and reused instead of opened for every request.
+    app.state.http_client = httpx.AsyncClient(timeout=settings.downstream_timeout)
+    yield
+    await app.state.http_client.aclose()
+
+
+app = FastAPI(title="Core API Gateway", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=settings.cors_origin_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+
 @app.get("/health", status_code=status.HTTP_200_OK)
 def check_health():
-    return {
-        "status":"ok"
-    }
-    
+    """Liveness: the process is up. Does not touch any dependency."""
+    return {"status": "ok"}
+
+
+@app.get("/health/ready")
+async def check_ready(db=Depends(get_db)):
+    """Readiness: the gateway can reach PostgreSQL and Redis."""
+    checks = {}
+
+    try:
+        await db.execute(text("SELECT 1"))
+        checks["database"] = "ok"
+    except SQLAlchemyError:
+        checks["database"] = "unavailable"
+
+    try:
+        await redis_client.ping()
+        checks["redis"] = "ok"
+    except RedisError:
+        checks["redis"] = "unavailable"
+
+    ready = all(value == "ok" for value in checks.values())
+    return JSONResponse(
+        status_code=(
+            status.HTTP_200_OK if ready else status.HTTP_503_SERVICE_UNAVAILABLE
+        ),
+        content={"status": "ok" if ready else "unavailable", **checks},
+    )
+
 
 @app.post("/api/v1/auth/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED)
 async def register_user(
@@ -85,6 +132,8 @@ async def register_user(
     try:
         await db.commit()
     except IntegrityError:
+        # Another request registered the same username between our
+        # check above and this commit; the unique constraint caught it.
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -95,19 +144,18 @@ async def register_user(
         "message": "User successfully registered",
         "username": payload.username,
     }
-    
-@app.post("/api/v1/auth/login",response_model=AuthResponse, status_code=status.HTTP_200_OK)
+
+
+@app.post("/api/v1/auth/login", response_model=AuthResponse, status_code=status.HTTP_200_OK)
 async def login_user(
     payload: UserLoginRequest,
     db=Depends(get_db)
-    ):
+):
+    result = await db.execute(
+        select(User).where(User.username == payload.username)
+    )
+    user = result.scalar_one_or_none()
 
-    result= await db.execute(
-    select(User).where(User.username== payload.username)
-   )
-    user= result.scalar_one_or_none()
-    
-        
     hash_to_check = user.hashed_password if user else DUMMY_PASSWORD_HASH
     password_ok = verify_password(payload.password, hash_to_check)
 
@@ -116,23 +164,25 @@ async def login_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password"
         )
-   
-    access_token= create_access_token(
+
+    access_token = create_access_token(
         {"sub": str(user.id)}
     )
-   
+
     return AuthResponse(
-    message="Login Successful",
-    username=payload.username,
-    access_token=access_token
-)
-    
+        message="Login Successful",
+        username=payload.username,
+        access_token=access_token
+    )
+
+
 @app.post("/api/v1/keys/generate", response_model=APIKeyResponse)
 async def generate_api_key(
     current_user: User = Depends(get_current_user),
     db=Depends(get_db)
 ):
-    
+    # Lock this user's row until the transaction ends, so two requests
+    # arriving at the same time can't both pass the check below.
     await db.execute(
         select(User.id).where(User.id == current_user.id).with_for_update()
     )
@@ -167,23 +217,27 @@ async def generate_api_key(
         api_key=raw_api_key,
         status="active"
     )
-    
+
+
 @app.get("/api/v1/auth/me")
-async def get_me(current_user: User= Depends(get_current_user)):
-    return{
-        "id":current_user.id,
+async def get_me(current_user: User = Depends(get_current_user)):
+    return {
+        "id": current_user.id,
         "username": current_user.username
     }
+
+
 @app.get("/api/v1/test-api-key")
 async def test_api_key(
-    key: APIKey= Depends(get_current_api_key)
+    key: APIKey = Depends(get_current_api_key)
 ):
-    return{
+    return {
         "message": "API key is valid",
         "user_id": key.user_id,
         "quota_limit": key.quota_limit
     }
-    
+
+
 @app.api_route(
     "/api/v1/proxy/{service}/{path:path}",
     methods=["GET", "POST", "PUT", "DELETE", "PATCH"]
@@ -205,18 +259,17 @@ async def proxy_request(
 
     body = await request.body()
     try:
-        async with httpx.AsyncClient(timeout=DOWNSTREAM_TIMEOUT) as client:
-            response = await client.request(
-                method=request.method,
-                url=target_url,
-                params=request.query_params,
-                headers={
-                    name: value
-                    for name, value in request.headers.items()
-                    if name.lower() not in EXCLUDED_REQUEST_HEADERS
-                },
-                content=body
-            )
+        response = await request.app.state.http_client.request(
+            method=request.method,
+            url=target_url,
+            params=request.query_params,
+            headers={
+                name: value
+                for name, value in request.headers.items()
+                if name.lower() not in EXCLUDED_REQUEST_HEADERS
+            },
+            content=body
+        )
     except httpx.TimeoutException:
         # Covers connect, read, write and pool timeouts.
         raise HTTPException(

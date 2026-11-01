@@ -1,15 +1,13 @@
-
-import os
-from dotenv import load_dotenv
 import redis.asyncio as redis
 
-load_dotenv()
+from app.config import settings
 
 redis_client = redis.Redis(
-    host=os.getenv("REDIS_HOST", "localhost"),
-    port=int(os.getenv("REDIS_PORT", "6379")),
-    password=os.getenv("REDIS_PASSWORD"),
+    host=settings.redis_host,
+    port=settings.redis_port,
+    password=settings.redis_password or None,
     decode_responses=True,
+    # Fail fast instead of hanging every request when Redis is slow or down.
     socket_connect_timeout=1,
     socket_timeout=1,
 )

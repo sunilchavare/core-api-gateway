@@ -1,25 +1,17 @@
 from pwdlib import PasswordHash
 from pwdlib.hashers.bcrypt import BcryptHasher
 from jose import JWTError, jwt 
-from dotenv import load_dotenv
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, APIKeyHeader
 from datetime import datetime, timedelta, timezone
 from fastapi import Depends, HTTPException, status, Security
-import os 
 import hashlib,secrets
-
 from app.database import get_db
 from app.models import User, APIKey
+from app.config import settings
 from sqlalchemy import select
 from app.rate_limit import check_rate_limit
 
-load_dotenv()
-
-SECRET_KEY = os.getenv("SECRET_KEY")
-
-if not SECRET_KEY:
-    raise RuntimeError("SECRET_KEY must be set in the environment")
-
+SECRET_KEY = settings.secret_key
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES= 30 
 

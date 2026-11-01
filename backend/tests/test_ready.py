@@ -28,8 +28,7 @@ def check_ready(monkeypatch):
 
         app.dependency_overrides[get_db] = fake_get_db
         monkeypatch.setattr("main.redis_client", redis_client)
-        with TestClient(app) as client:
-            return client.get("/health/ready")
+        return TestClient(app).get("/health/ready")
 
     yield run
     app.dependency_overrides.pop(get_db, None)
@@ -45,8 +44,7 @@ def dead_redis():
 
 
 def test_liveness_does_not_depend_on_anything():
-    with TestClient(app) as client:
-        response = client.get("/health")
+    response = TestClient(app).get("/health")
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}

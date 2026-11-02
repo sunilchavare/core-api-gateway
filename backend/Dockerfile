@@ -1,12 +1,20 @@
 FROM python:3.12-slim
 
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
 WORKDIR /app
 
 COPY requirements.txt .
 
 RUN pip install --no-cache-dir --default-timeout=100 --retries 5 -r requirements.txt
 
-COPY . .
+# Run as an unprivileged user so a compromised app can't act as root.
+RUN useradd --create-home --uid 10001 appuser
+
+COPY --chown=appuser:appuser . .
+
+USER appuser
 
 EXPOSE 8000
 

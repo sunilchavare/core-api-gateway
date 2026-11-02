@@ -29,12 +29,34 @@ services:
     command: ["uvicorn", "app.downstream:downstream_app", "--host", "0.0.0.0", "--port", "8001"]
     ports:
       - "127.0.0.1:8001:8001"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/hello', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
   gateway:
     build:
       context: ./backend
     ports:
       - "127.0.0.1:8000:8000"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      # Liveness only: the gateway fails open, so a Redis outage should not
+      # mark it unhealthy. Use /health/ready to check the dependencies.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     env_file:
       - .env
     environment:
@@ -51,7 +73,7 @@ services:
       redis:
         condition: service_healthy
       downstream:
-        condition: service_started
+        condition: service_healthy
 
 volumes:
   postgres_data:

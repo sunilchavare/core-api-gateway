@@ -1,6 +1,7 @@
 # Virtual environments
 .venv/
 venv/
+env/
 
 # Environment files and secrets
 .env
@@ -15,6 +16,15 @@ __pycache__/
 .coverage
 htmlcov/
 *.egg-info/
+
+# Not needed inside the image
+tests/
+pytest.ini
+requirements-dev.txt
+Dockerfile
+.dockerignore
+*.md
+*.log
 
 # Git metadata
 .git/

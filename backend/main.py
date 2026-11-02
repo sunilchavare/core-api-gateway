@@ -14,6 +14,7 @@ from app.models import APIKey, User
 from app.redis import redis_client
 from app.routes import DOWNSTREAM_SERVICES
 from app.schemas import (
+    APIKeyInfo,
     APIKeyResponse,
     AuthResponse,
     RegisterResponse,
@@ -214,9 +215,45 @@ async def generate_api_key(
     await db.commit()
 
     return APIKeyResponse(
+        id=api_key.id,
         api_key=raw_api_key,
         status="active"
     )
+
+
+@app.get("/api/v1/keys", response_model=list[APIKeyInfo])
+async def list_api_keys(
+    current_user: User = Depends(get_current_user),
+    db=Depends(get_db)
+):
+    result = await db.execute(
+        select(APIKey).where(APIKey.user_id == current_user.id).order_by(APIKey.id)
+    )
+    return result.scalars().all()
+
+
+@app.delete("/api/v1/keys/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_api_key(
+    key_id: int,
+    current_user: User = Depends(get_current_user),
+    db=Depends(get_db)
+):
+    # Filtering by user_id means other users' keys look like "not found".
+    result = await db.execute(
+        select(APIKey).where(APIKey.id == key_id, APIKey.user_id == current_user.id)
+    )
+    api_key = result.scalar_one_or_none()
+
+    if api_key is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="API key not found"
+        )
+
+    # Revoking twice is harmless. The key stays in the table, inactive, so
+    # it stops working immediately and no longer counts toward the key limit.
+    api_key.is_active = False
+    await db.commit()
 
 
 @app.get("/api/v1/auth/me")

@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey
+from sqlalchemy import DateTime, ForeignKey, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -30,3 +30,6 @@ class APIKey(Base):
     is_active: Mapped[bool] = mapped_column(default=True)
     # Requests allowed per rate limit window (60 seconds).
     quota_limit: Mapped[int] = mapped_column(default=10)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, server_default=func.now()
+    )

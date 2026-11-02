@@ -73,14 +73,14 @@ button, a {
 
 .brand small {
   margin-top: 4px;
-  color: #818a98;
+  color: #5f6978;
   font-size: 10px;
   letter-spacing: 1.1px;
 }
 
 .nav-caption {
   margin: 0 8px 10px;
-  color: #939ba7;
+  color: #5f6978;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 1.1px;
@@ -88,12 +88,17 @@ button, a {
 
 .nav-link {
   display: block;
+  width: 100%;
   margin-bottom: 4px;
   padding: 11px 12px;
+  border: 0;
   border-radius: 6px;
-  color: #596372;
+  background: transparent;
+  color: #4c5665;
   font-size: 13px;
+  text-align: left;
   text-decoration: none;
+  cursor: pointer;
 }
 
 .nav-link:hover {
@@ -135,7 +140,7 @@ button, a {
 
 .environment-value {
   margin-left: auto;
-  color: #828b98;
+  color: #5f6978;
   font-size: 11px;
 }
 
@@ -143,9 +148,18 @@ button, a {
   padding: 7px 8px;
   border: 0;
   background: transparent;
-  color: #526b8d;
+  color: #3f5878;
   font-size: 12px;
   cursor: pointer;
+}
+
+.text-button:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.text-button:disabled {
+  cursor: wait;
+  opacity: 0.7;
 }
 
 .main-panel {
@@ -164,7 +178,7 @@ button, a {
 
 .breadcrumb {
   margin-bottom: 14px;
-  color: #818a97;
+  color: #5f6978;
   font-size: 12px;
 }
 
@@ -178,7 +192,7 @@ button, a {
 
 .page-header p, .panel-heading p {
   margin: 0;
-  color: #7b8491;
+  color: #5f6978;
   font-size: 13px;
   line-height: 1.6;
 }
@@ -188,7 +202,7 @@ button, a {
   border: 1px solid #dfe5ec;
   border-radius: 5px;
   background: #fff;
-  color: #697485;
+  color: #5f6978;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.6px;
@@ -228,7 +242,7 @@ button, a {
   padding: 5px 8px;
   border: 1px solid #e1e6ec;
   border-radius: 4px;
-  color: #6d7887;
+  color: #5f6978;
   font-size: 10px;
   font-weight: 700;
 }
@@ -291,7 +305,7 @@ button, a {
 
 .field-help {
   margin: 9px 0 0;
-  color: #818a97;
+  color: #5f6978;
   font-size: 11px;
   line-height: 1.6;
 }
@@ -329,7 +343,7 @@ button, a {
 }
 
 .duration {
-  color: #778191;
+  color: #5f6978;
   font-size: 11px;
 }
 
@@ -341,7 +355,7 @@ button, a {
   border-bottom: 0;
   border-radius: 5px 5px 0 0;
   background: #f8f9fb;
-  color: #737e8d;
+  color: #5f6978;
   font-size: 11px;
 }
 
@@ -372,7 +386,7 @@ button, a {
 }
 
 .history-count {
-  color: #828b98;
+  color: #5f6978;
   font-size: 11px;
 }
 
@@ -380,7 +394,7 @@ button, a {
   padding: 23px 14px;
   border: 1px dashed #dce2e9;
   border-radius: 5px;
-  color: #858e9a;
+  color: #5f6978;
   font-size: 12px;
   text-align: center;
 }
@@ -449,7 +463,7 @@ button, a {
 }
 
 .history-duration, .history-time {
-  color: #838c99;
+  color: #5f6978;
 }
 
 .page-footer {
@@ -457,7 +471,7 @@ button, a {
   justify-content: space-between;
   gap: 15px;
   padding: 7px 2px;
-  color: #8a929e;
+  color: #5f6978;
   font-size: 10px;
 }
 
@@ -541,10 +555,6 @@ button, a {
   margin-top: 22px;
 }
 
-.body-editor {
-  margin-top: 22px;
-}
-
 .body-editor textarea {
   display: block;
   width: 100%;
@@ -593,4 +603,44 @@ button, a {
   line-height: 1.7;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.history-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.secondary-button {
+  padding: 8px 12px;
+  border: 1px solid #d8dee7;
+  border-radius: 5px;
+  background: #fff;
+  color: #3b4657;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.secondary-button:hover:not(:disabled) {
+  background: #f4f6f9;
+}
+
+.secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* Visible keyboard focus on every interactive element. */
+button:focus-visible,
+a:focus-visible,
+select:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid #3b5f8f;
+  outline-offset: 2px;
+}
+
+.history-row:focus-visible {
+  outline-offset: -2px;
 }

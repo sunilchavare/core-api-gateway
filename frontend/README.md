@@ -1,16 +1,16 @@
-# React + Vite
+# Core Gateway frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A small React + Vite request builder for trying out the Core API Gateway: pick a method, enter an
+endpoint and API key, send the request, and inspect the response and timing.
 
-Currently, two official plugins are available:
+```bash
+npm install
+npm run dev      # http://localhost:5173
+npm run build    # production build into dist/
+npm run lint
+```
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+The gateway URL defaults to `http://127.0.0.1:8000`. To change it, copy `.env.example` to
+`.env.local` and set `VITE_API_BASE`.
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+API keys are held in memory only and are never saved to history or browser storage.

@@ -239,8 +239,8 @@ npm run build
 
 The suite has two parts:
 
-- **Unit tests** need nothing running. They use fake Redis and a mocked downstream.
-- **Integration tests** (marked `integration`) need PostgreSQL, Redis, and the demo downstream service on `127.0.0.1:8001`.
+- **Unit tests** need no running services. They use fake Redis and a mocked downstream.
+- **Integration tests** (marked `integration`) need PostgreSQL, Redis, and the demo downstream service.
 
 Set up a virtual environment first:
 
@@ -251,35 +251,48 @@ source .venv/bin/activate
 python -m pip install -r requirements-dev.txt
 ```
 
-Run only the unit tests:
+### Unit tests
+
+The app's settings require `SECRET_KEY` and `DATABASE_URL` to be set, even though unit tests never connect to a database. Dummy values are enough:
 
 ```bash
+export SECRET_KEY=unit-test-secret
+export DATABASE_URL=postgresql+psycopg://u:p@127.0.0.1:1/none
 python -m pytest -q -m "not integration"
+unset SECRET_KEY DATABASE_URL
 ```
 
-For the full suite, start Redis and the downstream service with Compose and make PostgreSQL reachable from your machine. The Compose database is not published to the host, so either run a local PostgreSQL or add a `docker-compose.override.yml` next to `docker-compose.yml`:
+Run the `unset` afterwards. Leftover dummy values in your shell override your real `.env`.
+
+### Full suite
+
+The Compose database is not published to your machine, so create a `docker-compose.override.yml` next to `docker-compose.yml`. It is for local use only, so don't commit it. Port 5433 avoids a clash with a PostgreSQL that may already run locally on 5432:
 
 ```yaml
 services:
   db:
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:5433:5432"
 ```
 
-Then put these in the `.env` file at the project root (use your own password) and run the migrations against that database:
+Add these lines to the `.env` file at the project root (use the same password as `POSTGRES_PASSWORD`). Make sure the file ends with a newline first:
 
 ```
-DATABASE_URL=postgresql+psycopg://coreapi:YOUR_POSTGRES_PASSWORD@localhost:5432/core_api_gateway
+DATABASE_URL=postgresql+psycopg://coreapi:YOUR_POSTGRES_PASSWORD@localhost:5433/core_api_gateway
 REDIS_HOST=localhost
 ```
 
+Start the services, wait until `docker compose ps` shows them all healthy, apply the migrations, and run the tests:
+
 ```bash
 docker compose up -d
+docker compose ps
+cd backend
 python -m alembic upgrade head
 python -m pytest -q
 ```
 
-Allow a few seconds after `docker compose up -d` for the services to become healthy. The timeout test waits on the 15-second `/slow` endpoint, so the full run takes about 30 seconds.
+All 54 tests should pass in about 30 seconds. The timeout test waits on the 15-second `/slow` endpoint.
 
 The same backend and frontend checks run on every push through GitHub Actions (`.github/workflows/ci.yml`).
 
@@ -314,6 +327,8 @@ The same backend and frontend checks run on every push through GitHub Actions (`
 - **Tests fail with `column ... does not exist`:** the database the tests use has not been migrated. Run `python -m alembic upgrade head` from `backend`. The container's database and the one your tests use can be different servers.
 - **Integration tests return 502 right after startup:** the downstream service is still starting. Wait a few seconds and rerun.
 - **Port 8000 or 5173 already in use:** stop the other process, or change the published port.
+- **`address already in use` for port 6379 (or 8000, 8001):** another process holds it, such as a local Redis or a second copy of this project. Run `sudo ss -ltnp | grep 6379` to find it and stop it.
+- **Testing a second copy of the project in a folder with the same name:** Docker treats both as one project and reuses the same database volume, so a new password fails to log in. Run Compose with a different project name (`docker compose -p other-name ...`) instead of deleting the volume.
 - **Frontend shows a network error:** check that the gateway is running and that the frontend origin is in `CORS_ORIGINS`.
 - **429 responses during manual testing:** wait for the 60-second window to reset.
 

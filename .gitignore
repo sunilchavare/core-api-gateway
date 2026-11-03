@@ -26,3 +26,6 @@ frontend/dist/
 
 # OS files
 .DS_Store
+
+# Local Compose overrides
+docker-compose.override.yml

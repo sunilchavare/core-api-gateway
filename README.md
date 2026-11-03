@@ -220,7 +220,7 @@ Docker Compose sets `DATABASE_URL`, `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`
 
 ## Run the Frontend
 
-The React and Vite frontend is a development tool for sending requests and inspecting responses. It is not part of the Compose services, so start the backend first.
+The React and Vite frontend is a development tool for trying the gateway: register and log in, generate and revoke API keys, send requests, and inspect responses. It is not part of the Compose services, so start the backend first.
 
 ```bash
 cd frontend
@@ -228,7 +228,7 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173, enter your API key, and send a request. To point it at a different gateway URL, copy `frontend/.env.example` to `frontend/.env.local` and set `VITE_API_BASE`.
+Open http://localhost:5173. On the **Account & keys** screen, register, log in, and generate a key. The new key is shown once and loaded into the **Request builder**, where you can send a request. Your login token and keys are held in memory only, so refreshing the page logs you out. To point it at a different gateway URL, copy `frontend/.env.example` to `frontend/.env.local` and set `VITE_API_BASE`.
 
 ```bash
 npm run lint

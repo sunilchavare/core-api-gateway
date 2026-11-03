@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import Account from './Account'
 import './App.css'
 
 // Override with VITE_API_BASE in frontend/.env.local (see .env.example).
@@ -7,6 +8,11 @@ const HISTORY_LIMIT = 8
 const BODY_METHODS = ['POST', 'PUT', 'PATCH']
 
 const VIEWS = {
+  account: {
+    label: 'Account & keys',
+    breadcrumb: 'Workspace / Account',
+    description: 'Register, log in, and manage the API keys used to call the gateway.',
+  },
   request: {
     label: 'Request builder',
     breadcrumb: 'Workspace / HTTP client',
@@ -60,7 +66,9 @@ function App() {
   // Starts true because the first check runs as soon as the page mounts.
   const [checkingHealth, setCheckingHealth] = useState(true)
   const [history, setHistory] = useState([])
-  const [activeView, setActiveView] = useState('request')
+  const [activeView, setActiveView] = useState('account')
+  // Login token, kept in memory only. Refreshing the page logs you out.
+  const [session, setSession] = useState(null)
 
   useEffect(() => {
     let cancelled = false
@@ -234,6 +242,15 @@ function App() {
           </div>
           <span className="local-label">LOCAL DEVELOPMENT</span>
         </header>
+
+        {activeView === 'account' && (
+          <Account
+            apiBase={API_BASE}
+            session={session}
+            setSession={setSession}
+            onUseKey={setApiKey}
+          />
+        )}
 
         {activeView === 'request' && (
           <section className="panel request-panel" id="request">

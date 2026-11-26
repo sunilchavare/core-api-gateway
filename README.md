@@ -26,7 +26,7 @@ An API gateway built with FastAPI, PostgreSQL, Redis, and HTTPX. Users register,
 - Registration and login with JWT access tokens (bcrypt password hashing)
 - API keys shown once and stored only as SHA-256 hashes; list and revoke your own keys; at most 5 active keys per user
 - Proxying of GET, POST, PUT, PATCH, and DELETE requests to downstream services, with clear gateway errors (502, 504)
-- Redis-backed rate limiting per API key, with `Retry-After` on 429 responses
+- Redis-backed sliding-window rate limiting per API key, with `Retry-After` on 429 responses
 - Separate liveness (`/health`) and readiness (`/health/ready`) endpoints
 - PostgreSQL with SQLAlchemy 2.0 (async) and Alembic migrations
 - Docker Compose environment: non-root containers, healthchecks, dropped capabilities
@@ -38,7 +38,7 @@ An API gateway built with FastAPI, PostgreSQL, Redis, and HTTPX. Users register,
 ```
 Client ──► Gateway (:8000) ──► Downstream service (:8001, internal)
               │   │
-              │   └──► Redis      (rate-limit counters)
+              │   └──► Redis      (rate-limit windows)
               └──────► PostgreSQL (users and API keys)
 ```
 
@@ -178,7 +178,7 @@ Expected response:
 
 ### Rate limiting
 
-Each API key has a `quota_limit`. New keys allow **10 requests per 60 seconds**, counted in a fixed window. Extra requests receive `HTTP 429` with `{"detail": "Rate limit exceeded"}` and a `Retry-After` header giving the seconds until the window resets.
+Each API key has a `quota_limit`. New keys allow **10 requests in any 60-second period**, measured as a sliding window: a request counts for 60 seconds after it is made, so there is no boundary where the quota suddenly resets. Extra requests receive `HTTP 429` with `{"detail": "Rate limit exceeded"}` and a `Retry-After` header giving the seconds until the oldest request leaves the window and a slot frees up. Blocked requests are not counted against the quota.
 
 ### Proxy routing
 
@@ -292,7 +292,7 @@ python -m alembic upgrade head
 python -m pytest -q
 ```
 
-All 54 tests should pass in about 30 seconds. The timeout test waits on the 15-second `/slow` endpoint.
+All 58 tests should pass in about 30 seconds. The timeout test waits on the 15-second `/slow` endpoint.
 
 The same backend and frontend checks run on every push through GitHub Actions (`.github/workflows/ci.yml`).
 
@@ -315,7 +315,7 @@ The same backend and frontend checks run on every push through GitHub Actions (`
 
 - **No user enumeration:** login returns the same `401` for an unknown user and a wrong password, and always runs a bcrypt check so response time does not reveal which usernames exist.
 - **Safe proxying:** hop-by-hop headers and the client's `X-API-Key` and `Host` are not forwarded. Encoding and length headers are dropped from responses because HTTPX has already decoded the body.
-- **Atomic rate limiting:** the counter and its expiry are set in one Redis transaction, so a counter can never be left without an expiry. If Redis is down the limiter fails open and logs a warning, so a Redis outage does not take the gateway down.
+- **Sliding-window rate limiting:** each allowed request is stored in a Redis sorted set, scored by its timestamp. A Lua script drops entries older than the window, counts the rest, and records the new request in one atomic step, so concurrent requests cannot exceed the quota. Redis supplies the clock, so several gateway instances stay consistent. Memory per key is bounded by the quota, and idle keys expire on their own. Compared with a fixed window, this stops a client from sending a full quota just before a reset and another just after. If Redis is down the limiter fails open and logs a warning, so a Redis outage does not take the gateway down.
 - **Race-safe key limit:** the per-user key cap is enforced under a row lock, so concurrent requests cannot exceed it.
 - **Timestamps:** stored as timezone-aware UTC.
 - **Containers:** the gateway and downstream run as a non-root user with all Linux capabilities dropped. The gateway healthcheck uses the liveness endpoint, so a Redis outage does not mark it unhealthy.
@@ -330,11 +330,11 @@ The same backend and frontend checks run on every push through GitHub Actions (`
 - **`address already in use` for port 6379 (or 8000, 8001):** another process holds it, such as a local Redis or a second copy of this project. Run `sudo ss -ltnp | grep 6379` to find it and stop it.
 - **Testing a second copy of the project in a folder with the same name:** Docker treats both as one project and reuses the same database volume, so a new password fails to log in. Run Compose with a different project name (`docker compose -p other-name ...`) instead of deleting the volume.
 - **Frontend shows a network error:** check that the gateway is running and that the frontend origin is in `CORS_ORIGINS`.
-- **429 responses during manual testing:** wait for the 60-second window to reset.
+- **429 responses during manual testing:** wait for the number of seconds in the `Retry-After` header.
 
 ## Known Limitations
 
-- Rate limiting uses a fixed window, so bursts around a window boundary can briefly exceed the intended rate.
+- Rate limiting stores one entry per allowed request, which suits quotas in the tens or hundreds per window. Very large quotas would need a counter-based approach such as a token bucket.
 - Only one downstream service is registered, and routing is configured through environment variables.
 - Revoked keys are kept in the database (soft delete), and there is no cleanup job.
 - No refresh tokens or password reset; access tokens simply expire after 30 minutes.

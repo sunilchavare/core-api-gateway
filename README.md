@@ -13,6 +13,7 @@ An API gateway built with FastAPI, PostgreSQL, Redis, and HTTPX. Users register,
 - [Quick Start](#quick-start)
 - [Using the API](#using-the-api)
 - [Configuration](#configuration)
+- [Observability](#observability)
 - [Run the Frontend](#run-the-frontend)
 - [Run Tests](#run-tests)
 - [Endpoints](#endpoints)
@@ -28,6 +29,7 @@ An API gateway built with FastAPI, PostgreSQL, Redis, and HTTPX. Users register,
 - Proxying of GET, POST, PUT, PATCH, and DELETE requests to downstream services, with clear gateway errors (502, 504)
 - Redis-backed sliding-window rate limiting per API key, with `Retry-After` on 429 responses
 - Separate liveness (`/health`) and readiness (`/health/ready`) endpoints
+- Structured JSON logs, a correlation ID on every request (forwarded to downstream services), and Prometheus metrics at `/metrics`
 - PostgreSQL with SQLAlchemy 2.0 (async) and Alembic migrations
 - Docker Compose environment: non-root containers, healthchecks, dropped capabilities
 - Pytest suite (unit and integration) and a GitHub Actions pipeline that runs the backend tests and frontend lint and build
@@ -215,8 +217,60 @@ Gateway error responses:
 | `POSTGRES_PASSWORD` | Yes | Password for the `coreapi` database user |
 | `SECRET_KEY` | Yes | Secret used to sign JWTs |
 | `DOWNSTREAM_TIMEOUT` | No | Downstream timeout in seconds (default `10`) |
+| `LOG_LEVEL` | No | `DEBUG`, `INFO` (default), `WARNING`, `ERROR` or `CRITICAL` |
+| `METRICS_TOKEN` | No | When set, `/metrics` requires `Authorization: Bearer <token>` |
 
 Docker Compose sets `DATABASE_URL`, `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, and `DOWNSTREAM_HELLO_URL` for the gateway automatically. The same variables, plus `CORS_ORIGINS` (default `http://localhost:5173,http://127.0.0.1:5173`) and `SQL_ECHO`, are read by the app through `backend/app/config.py`, which fails at startup if `SECRET_KEY` or `DATABASE_URL` is missing.
+
+## Observability
+
+### Correlation IDs
+
+Every response carries an `X-Correlation-ID` header. If the client sends one (letters, digits, `.`, `_`, `-`, up to 64 characters) it is kept. Anything else is replaced with a generated ID, because the value ends up in logs and in a header sent downstream. The same ID is forwarded to the downstream service and appears on every log line for that request, so one request can be followed across services.
+
+```bash
+curl -i http://localhost:8000/api/v1/proxy/hello/hello \
+  -H "X-API-Key: YOUR_API_KEY" \
+  -H "X-Correlation-ID: demo-trace-42"
+```
+
+### Logs
+
+Logs are written to standard output as one JSON object per line, so tools like `jq` and log aggregators can read them. Each request writes one access record. Query strings and headers are never logged, because they can contain secrets. Health and metrics probes are logged only at `DEBUG` so they do not bury real traffic.
+
+```json
+{"timestamp": "2026-11-28T13:27:55.994197+00:00", "level": "INFO", "logger": "gateway.access", "message": "request", "request_id": "899b7a2fbb6d4cfcae3eedd5dfd2e31f", "method": "GET", "path": "/api/v1/proxy/hello/hello", "status": 429, "duration_ms": 2.9}
+```
+
+Follow the logs with `docker compose logs -f gateway`, or filter them (`-R` and `fromjson?` skip the few plain-text lines uvicorn prints before the app starts): `docker compose logs gateway --no-log-prefix | jq -R 'fromjson? | select(.status >= 500)'`.
+
+### Metrics
+
+`GET /metrics` returns Prometheus text format:
+
+| Metric | Type | Labels | Meaning |
+|---|---|---|---|
+| `gateway_http_requests_total` | counter | `method`, `route`, `status` | Requests handled by the gateway |
+| `gateway_http_request_duration_seconds` | histogram | `method`, `route` | Time to answer a request |
+| `gateway_upstream_requests_total` | counter | `service`, `outcome` | Downstream calls: `success`, `http_5xx`, `timeout`, `connect_error`, `request_error` |
+| `gateway_upstream_request_duration_seconds` | histogram | `service` | Time spent waiting for a downstream service |
+| `gateway_rate_limit_rejections_total` | counter | none | Requests rejected with 429 |
+| `gateway_rate_limit_redis_errors_total` | counter | none | Times the limiter failed open because Redis was unavailable |
+
+The `route` label is the route template (for example `/api/v1/proxy/{service}/{path:path}`), and any path that matches no route is labeled `unmatched`. Raw paths, API keys, and usernames are never used as labels, so scanners and clients cannot create unlimited metric series.
+
+**Protect `/metrics` outside local development.** It is open by default. Set `METRICS_TOKEN` in `.env` to require a bearer token, or block the path at your reverse proxy. A Prometheus scrape config for a protected endpoint:
+
+```yaml
+scrape_configs:
+  - job_name: core-api-gateway
+    authorization:
+      credentials: YOUR_METRICS_TOKEN
+    static_configs:
+      - targets: ["localhost:8000"]
+```
+
+Useful questions to ask of these metrics: error rate (`status=~"5.."` over all requests), slow downstream services (the upstream histogram), clients hitting their quota (rejections), and silent rate-limiter outages (the Redis error counter).
 
 ## Run the Frontend
 
@@ -292,7 +346,7 @@ python -m alembic upgrade head
 python -m pytest -q
 ```
 
-All 58 tests should pass in about 30 seconds. The timeout test waits on the 15-second `/slow` endpoint.
+All 96 tests should pass in about 30 seconds. The timeout test waits on the 15-second `/slow` endpoint.
 
 The same backend and frontend checks run on every push through GitHub Actions (`.github/workflows/ci.yml`).
 
@@ -302,6 +356,7 @@ The same backend and frontend checks run on every push through GitHub Actions (`
 |---|---|---|---|
 | GET | `/health` | None | Liveness check |
 | GET | `/health/ready` | None | Readiness check (PostgreSQL and Redis) |
+| GET | `/metrics` | Optional bearer token | Prometheus metrics (token required when `METRICS_TOKEN` is set) |
 | POST | `/api/v1/auth/register` | None | Register a user |
 | POST | `/api/v1/auth/login` | None | Log in and receive a JWT |
 | GET | `/api/v1/auth/me` | Bearer token | Get the current user |
@@ -314,6 +369,7 @@ The same backend and frontend checks run on every push through GitHub Actions (`
 ## Design Notes
 
 - **No user enumeration:** login returns the same `401` for an unknown user and a wrong password, and always runs a bcrypt check so response time does not reveal which usernames exist.
+- **Observable by design:** logs, metrics, and the correlation ID are added by one ASGI middleware, so no endpoint can forget them, and it is the outermost layer, so errors and CORS responses are covered too. Metric labels are bounded sets, never client-controlled values. A failed rate-limiter lookup is counted, because failing open is invisible to clients.
 - **Safe proxying:** hop-by-hop headers and the client's `X-API-Key` and `Host` are not forwarded. Encoding and length headers are dropped from responses because HTTPX has already decoded the body.
 - **Sliding-window rate limiting:** each allowed request is stored in a Redis sorted set, scored by its timestamp. A Lua script drops entries older than the window, counts the rest, and records the new request in one atomic step, so concurrent requests cannot exceed the quota. Redis supplies the clock, so several gateway instances stay consistent. Memory per key is bounded by the quota, and idle keys expire on their own. Compared with a fixed window, this stops a client from sending a full quota just before a reset and another just after. If Redis is down the limiter fails open and logs a warning, so a Redis outage does not take the gateway down.
 - **Race-safe key limit:** the per-user key cap is enforced under a row lock, so concurrent requests cannot exceed it.
@@ -338,7 +394,9 @@ The same backend and frontend checks run on every push through GitHub Actions (`
 - Only one downstream service is registered, and routing is configured through environment variables.
 - Revoked keys are kept in the database (soft delete), and there is no cleanup job.
 - No refresh tokens or password reset; access tokens simply expire after 30 minutes.
-- Designed for local development, not production use. There is no TLS termination, metrics, or log aggregation.
+- Metrics are kept in each process's memory and reset when it restarts. Running several worker processes would need Prometheus multiprocess mode.
+- Logs go to standard output only. Shipping them to an aggregator, and distributed tracing, are not included.
+- Designed for local development, not production use. There is no TLS termination.
 
 ## License
 

@@ -5,6 +5,7 @@ import fakeredis.aioredis
 import pytest
 import redis.asyncio
 from fastapi import HTTPException
+from prometheus_client import REGISTRY
 
 import app.rate_limit as rate_limit
 import app.security as security
@@ -130,6 +131,7 @@ def test_idle_keys_expire_so_redis_does_not_fill_up(run_with_fake_redis):
 
 
 class FakeKey:
+    id = 1
     is_active = True
     quota_limit = 10
     user_id = 1
@@ -179,11 +181,15 @@ def test_fails_open_when_redis_is_down(monkeypatch, caplog):
         rate_limit, "_sliding_window_script", dead_redis.register_script(rate_limit.SLIDING_WINDOW_LUA)
     )
 
+    before = REGISTRY.get_sample_value("gateway_rate_limit_redis_errors_total") or 0.0
+
     with caplog.at_level("WARNING"):
         result = asyncio.run(rate_limit.check_rate_limit("key-x", 3))
 
     assert result == (True, 0)
     assert "Redis unavailable" in caplog.text
+    # Failing open is invisible to clients, so it must be visible in metrics.
+    assert REGISTRY.get_sample_value("gateway_rate_limit_redis_errors_total") == before + 1
 
 
 @pytest.mark.integration

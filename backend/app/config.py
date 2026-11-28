@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -21,6 +22,9 @@ class Settings(BaseSettings):
     downstream_timeout: float = 10.0
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     sql_echo: bool = False
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+    # When set, /metrics requires `Authorization: Bearer <token>`.
+    metrics_token: str | None = None
 
     @property
     def cors_origin_list(self) -> list[str]:

@@ -4,6 +4,7 @@ import uuid
 
 from redis.exceptions import RedisError
 
+from app.metrics import RATE_LIMIT_REDIS_ERRORS
 from app.redis import redis_client
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,7 @@ async def check_rate_limit(
             args=[window_seconds * 1000, quota_limit, uuid.uuid4().hex],
         )
     except RedisError:
+        RATE_LIMIT_REDIS_ERRORS.inc()
         logger.warning("Redis unavailable, rate limiting skipped", exc_info=True)
         return True, 0
 

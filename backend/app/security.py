@@ -9,7 +9,11 @@ from app.database import get_db
 from app.models import User, APIKey
 from app.config import settings
 from sqlalchemy import select
+from app.metrics import RATE_LIMIT_REJECTIONS
 from app.rate_limit import check_rate_limit
+import logging
+
+logger = logging.getLogger("gateway.security")
 
 SECRET_KEY = settings.secret_key
 ALGORITHM = "HS256"
@@ -111,6 +115,9 @@ async def get_current_api_key(
     )
 
     if not allowed:
+        RATE_LIMIT_REJECTIONS.inc()
+        # The key's database id identifies it in logs without exposing the secret.
+        logger.info("Rate limit exceeded", extra={"key_id": key.id, "retry_after": retry_after})
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Rate limit exceeded",

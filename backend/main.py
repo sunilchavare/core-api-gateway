@@ -1,16 +1,23 @@
+import logging
+import secrets
+import time
 from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from redis.exceptions import RedisError
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.config import settings
 from app.database import get_db
+from app.logging_config import request_id_var, setup_logging
+from app.metrics import UPSTREAM_REQUEST_DURATION, UPSTREAM_REQUESTS
 from app.models import APIKey, User
+from app.observability import CORRELATION_HEADER, ObservabilityMiddleware
 from app.redis import redis_client
 from app.routes import DOWNSTREAM_SERVICES
 from app.schemas import (
@@ -58,9 +65,12 @@ EXCLUDED_RESPONSE_HEADERS = HOP_BY_HOP_HEADERS | {"content-encoding", "content-l
 # would mean an unlimited quota. Cap how many active keys one user can hold.
 MAX_ACTIVE_KEYS_PER_USER = 5
 
+logger = logging.getLogger("gateway.proxy")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    setup_logging(settings.log_level)
     # One shared client for all proxied requests, so connections are
     # pooled and reused instead of opened for every request.
     app.state.http_client = httpx.AsyncClient(timeout=settings.downstream_timeout)
@@ -76,7 +86,13 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Lets browser code read the id from a response.
+    expose_headers=[CORRELATION_HEADER],
 )
+
+# Added after CORS so it is the outermost layer: even CORS preflight and
+# error responses get a correlation id, an access log line and metrics.
+app.add_middleware(ObservabilityMiddleware)
 
 
 @app.get("/health", status_code=status.HTTP_200_OK)
@@ -109,6 +125,23 @@ async def check_ready(db=Depends(get_db)):
         ),
         content={"status": "ok" if ready else "unavailable", **checks},
     )
+
+
+@app.get("/metrics", include_in_schema=False)
+async def metrics(request: Request):
+    """Prometheus metrics. Set METRICS_TOKEN to require a bearer token."""
+    if settings.metrics_token:
+        supplied = request.headers.get("authorization", "")
+        expected = f"Bearer {settings.metrics_token}"
+        # compare_digest takes the same time however many characters match.
+        if not secrets.compare_digest(supplied.encode(), expected.encode()):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid metrics token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.post("/api/v1/auth/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED)
@@ -295,35 +328,65 @@ async def proxy_request(
     target_url = f"{base_url}/{path}"
 
     body = await request.body()
+
+    headers = {
+        name: value
+        for name, value in request.headers.items()
+        if name.lower() not in EXCLUDED_REQUEST_HEADERS
+    }
+    # Always the validated id from the middleware, never a raw client value, so
+    # one id follows the request through the gateway and the downstream service.
+    request_id = request_id_var.get()
+    if request_id:
+        headers[CORRELATION_HEADER.lower()] = request_id
+
+    started = time.perf_counter()
+    outcome = "success"
     try:
         response = await request.app.state.http_client.request(
             method=request.method,
             url=target_url,
             params=request.query_params,
-            headers={
-                name: value
-                for name, value in request.headers.items()
-                if name.lower() not in EXCLUDED_REQUEST_HEADERS
-            },
+            headers=headers,
             content=body
         )
+        if response.status_code >= 500:
+            outcome = "http_5xx"
     except httpx.TimeoutException:
         # Covers connect, read, write and pool timeouts.
+        outcome = "timeout"
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail="Downstream service timeout"
         )
     except httpx.ConnectError:
+        outcome = "connect_error"
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Downstream service unavailable"
         )
     except httpx.RequestError:
         # Any other network or protocol failure talking to the downstream.
+        outcome = "request_error"
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Downstream request failed"
         )
+    finally:
+        elapsed = time.perf_counter() - started
+        # `service` is a registered name here (unknown names returned 404
+        # above), so it is safe to use as a metric label.
+        UPSTREAM_REQUESTS.labels(service, outcome).inc()
+        UPSTREAM_REQUEST_DURATION.labels(service).observe(elapsed)
+        if outcome != "success":
+            logger.warning(
+                "Downstream call failed",
+                extra={
+                    "service": service,
+                    "outcome": outcome,
+                    "duration_ms": round(elapsed * 1000, 1),
+                },
+            )
 
     response_headers = {
         name: value
